@@ -22,12 +22,11 @@ else
   printf '\nFRONTEND_ORIGIN=https://%s,https://www.%s\n' "$DOMAIN" "$DOMAIN" >> backend/.env
 fi
 
-git pull --ff-only origin main
-
+echo "Deploying $(git rev-parse --short HEAD)"
+export PATH="$HOME/.local/bin:$PATH"
 if ! command -v uv >/dev/null 2>&1; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
-export PATH="$HOME/.local/bin:$PATH"
 
 if [[ ! -s "$HOME/.nvm/nvm.sh" ]]; then
   echo "ERROR: NVM is not installed for ubuntu"
@@ -61,15 +60,21 @@ sudo systemctl reload nginx
 wait_for_url() {
   local url="$1"
   local extra_header="${2:-}"
+  echo "Waiting for $url"
   for _ in {1..60}; do
     if [[ -n "$extra_header" ]]; then
-      curl --fail --silent --insecure -H "$extra_header" "$url" >/dev/null && return 0
-    elif curl --fail --silent "$url" >/dev/null; then
+      if curl --fail --silent --connect-timeout 2 --max-time 3 --insecure -H "$extra_header" "$url" >/dev/null; then
+        echo "Ready: $url"
+        return 0
+      fi
+    elif curl --fail --silent --connect-timeout 2 --max-time 3 "$url" >/dev/null; then
+      echo "Ready: $url"
       return 0
     fi
     sleep 1
   done
   echo "health check timed out: $url"
+  sudo journalctl -u check-in-backend -u check-in-frontend -n 40 --no-pager
   return 1
 }
 

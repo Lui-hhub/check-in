@@ -38,6 +38,9 @@ jobs:
       - run: npm run build
 
   deploy:
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
     needs: [backend, frontend]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -48,4 +51,10 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ubuntu
           key: ${{ secrets.SSH_KEY }}
-          script: bash /home/ubuntu/check-in/deploy/deploy.sh
+          command_timeout: 20m
+          script: |
+            set -eu
+            cd /home/ubuntu/check-in
+            test -z "$(git status --porcelain)"
+            git pull --ff-only origin main
+            bash deploy/deploy.sh
