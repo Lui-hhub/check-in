@@ -1,0 +1,19 @@
+[Unit]
+Description=Check-in Next.js Frontend
+After=network.target check-in-backend.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/check-in/frontend
+Environment=NODE_ENV=production
+Environment=PORT=3000
+ExecStart=/home/ubuntu/.nvm/versions/node/v24.21.0/bin/npm run start -- --hostname 127.0.0.1 --port 3000
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

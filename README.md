@@ -27,6 +27,21 @@
 
 5. 浏览器打开 `http://localhost:3000`。摄像头仅可在 localhost 或 HTTPS 页面使用。
 
+服务器首次部署可执行 `deploy/bootstrap-server.sh`。它会安装 PostgreSQL、创建 `checkin` 数据库用户、生成应用密码，并完成 systemd、Nginx 和迁移配置；生成的首次登录密码保存在服务器 `backend/INITIAL-CREDENTIALS.txt`，请立即妥善保存并删除该文件。
+
+### 服务器首次接入
+
+服务器上首次执行：
+
+```bash
+ssh myapp
+git clone https://github.com/Lui-hhub/check-in.git ~/check-in
+cd ~/check-in
+bash deploy/bootstrap-server.sh
+```
+
+GitHub 仓库需要设置 Actions Secrets：`SSH_HOST`（服务器地址）和 `SSH_KEY`（可登录 `ubuntu` 的私钥）。之后推送 `main` 分支会先运行前后端检查，再通过 `deploy/deploy.sh` 更新服务器。域名当前沿用服务器已有的 `xn--btvt3a.online` 配置；切换完成后，旧 `tech-learn` 服务会被停用，但目录仍保留以便回滚。
+
 人脸检测、关键点和识别权重已放入 `frontend/public/models/`，首次页面加载会从本地提供。学生和签到上传的照片均由后端验证并重新编码为最长边不超过 640px 的 JPEG。
 
 ## 功能

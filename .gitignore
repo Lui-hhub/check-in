@@ -9,3 +9,6 @@ node_modules/
 backend/.venv/
 backend/data/
 *.tsbuildinfo
+backend/.env.production
+frontend/.env.production
+backend/INITIAL-CREDENTIALS.txt
