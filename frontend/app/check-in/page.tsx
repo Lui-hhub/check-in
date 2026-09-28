@@ -10,6 +10,7 @@ export default function CheckIn(){
   const video=useRef<HTMLVideoElement>(null);
   const [students,setStudents]=useState<Student[]>([]);
   const [stream,setStream]=useState<MediaStream>();
+  const [cameraMode,setCameraMode]=useState<"environment"|"user">("environment");
   const [ready,setReady]=useState(false);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
@@ -44,12 +45,18 @@ export default function CheckIn(){
     return()=>{stream?.getTracks().forEach(track=>track.stop())};
   },[stream]);
 
-  async function startCamera(){
+  async function startCamera(mode: "environment"|"user" = cameraMode){
     setError("");
     try{
-      const nextStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"},audio:false});
+      stream?.getTracks().forEach(track=>track.stop());
+      const nextStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:mode}},audio:false});
       setStream(nextStream);
-    }catch{setError("无法访问摄像头。请在浏览器中允许相机权限后重试。")}
+      setCameraMode(mode);
+    }catch{setError("无法访问摄像头。请在浏览器中允许相机权限后重试，或检查设备是否支持该摄像头。")}
+  }
+
+  async function switchCamera(){
+    await startCamera(cameraMode === "environment" ? "user" : "environment");
   }
 
   function capture():Promise<Blob>{
@@ -99,7 +106,8 @@ export default function CheckIn(){
             {!stream&&<p className="finder-message">镜头尚未开启</p>}
           </div>
           <div className="camera-actions">
-            <button className="secondary-button" type="button" onClick={startCamera}>{stream?"重新连接摄像头":"开启摄像头"}</button>
+            <button className="secondary-button" type="button" onClick={()=>startCamera()}>{stream?"重新连接摄像头":"开启摄像头"}</button>
+            {stream&&<button className="secondary-button" type="button" onClick={switchCamera} disabled={busy}>切换{cameraMode === "environment" ? "前置" : "后置"}摄像头</button>}
             <button className="primary-button" type="button" disabled={!stream||busy} onClick={()=>submit()}>{busy?"正在识别…":result?"再拍一张":"拍照并识别"}</button>
           </div>
           <p className="camera-state"><span className={`state-dot${ready?" state-dot-ready":""}`} />{ready?"人脸识别已就绪":"正在准备人脸识别"}</p>
