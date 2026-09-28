@@ -53,15 +53,29 @@ sudo ln -sfn /etc/nginx/sites-available/check-in /etc/nginx/sites-enabled/check-
 sudo systemctl daemon-reload
 sudo systemctl enable check-in-backend check-in-frontend
 sudo systemctl restart check-in-backend
-sleep 2
 sudo systemctl restart check-in-frontend
 sudo nginx -t
 sudo rm -f /etc/nginx/sites-enabled/tech-learn
 sudo systemctl reload nginx
 
-curl --fail --silent http://127.0.0.1:8001/health >/dev/null
-curl --fail --silent http://127.0.0.1:3000 >/dev/null
-curl --fail --silent --insecure --header "Host: $DOMAIN" https://127.0.0.1/ >/dev/null
+wait_for_url() {
+  local url="$1"
+  local extra_header="${2:-}"
+  for _ in {1..60}; do
+    if [[ -n "$extra_header" ]]; then
+      curl --fail --silent --insecure -H "$extra_header" "$url" >/dev/null && return 0
+    elif curl --fail --silent "$url" >/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "health check timed out: $url"
+  return 1
+}
+
+wait_for_url http://127.0.0.1:8001/health
+wait_for_url http://127.0.0.1:3000
+wait_for_url "https://127.0.0.1/" "Host: $DOMAIN"
 sudo systemctl disable --now zero-to-tech-backend.service 2>/dev/null || true
 sudo nginx -t
 sudo systemctl reload nginx
