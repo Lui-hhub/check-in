@@ -16,6 +16,11 @@ if [[ ! -f backend/.env ]]; then
   echo "ERROR: missing $APP_DIR/backend/.env"
   exit 1
 fi
+if grep -q '^FRONTEND_ORIGIN=' backend/.env; then
+  sed -i "s#^FRONTEND_ORIGIN=.*#FRONTEND_ORIGIN=https://${DOMAIN},https://www.${DOMAIN}#" backend/.env
+else
+  printf '\nFRONTEND_ORIGIN=https://%s,https://www.%s\n' "$DOMAIN" "$DOMAIN" >> backend/.env
+fi
 
 git pull --ff-only origin main
 
