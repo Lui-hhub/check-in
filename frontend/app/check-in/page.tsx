@@ -20,13 +20,22 @@ export default function CheckIn(){
   useEffect(()=>{
     let active=true;
     (async()=>{
-      try{const list=await api("/api/students",{},["uploader"]);if(active)setStudents(list)}
-      catch(e){setError((e as Error).message)}
-      try{
+      const studentsTask=api("/api/students",{},["uploader"])
+        .then(list=>{if(active)setStudents(list)})
+        .catch(e=>{if(active)setError((e as Error).message)});
+      const modelsTask=(async()=>{
         const faceapi=await import("face-api.js");
-        await Promise.all([faceapi.nets.tinyFaceDetector.loadFromUri("/models"),faceapi.nets.faceLandmark68Net.loadFromUri("/models"),faceapi.nets.faceRecognitionNet.loadFromUri("/models")]);
+        await Promise.race([
+          Promise.all([
+            faceapi.nets.tinyFaceDetector.loadFromUri("/models"),
+            faceapi.nets.faceLandmark68Net.loadFromUri("/models"),
+            faceapi.nets.faceRecognitionNet.loadFromUri("/models"),
+          ]),
+          new Promise<never>((_,reject)=>setTimeout(()=>reject(new Error("模型加载超时，请检查网络后重试")),30000)),
+        ]);
         if(active)setReady(true);
-      }catch(e){if(active)setError(`人脸识别尚未就绪：${(e as Error).message}`)}
+      })().catch(e=>{if(active)setError(`人脸识别尚未就绪：${(e as Error).message}`)});
+      await Promise.all([studentsTask,modelsTask]);
     })();
     return()=>{active=false};
   },[]);
