@@ -2,3 +2,10 @@
 __pycache__/
 *.pyc
 dist/
+node_modules/
+.next/
+.env
+.env.local
+backend/.venv/
+backend/data/
+*.tsbuildinfo

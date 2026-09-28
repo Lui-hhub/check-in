@@ -1,0 +1,4 @@
+"use client";
+import {useEffect,useState} from "react";import {api,token} from "../lib/api";
+const base=process.env.NEXT_PUBLIC_API_BASE_URL||"http://localhost:8000";
+export default function MediaImage({path,alt}:{path:string;alt:string}){const [src,setSrc]=useState("");useEffect(()=>{let url="";const controller=new AbortController();(async()=>{try{const t=token("viewer")||token("admin")||token("uploader");const response=await fetch(`${base}${path}`,{headers:t?{Authorization:`Bearer ${t}`}:{},signal:controller.signal});if(!response.ok)return;url=URL.createObjectURL(await response.blob());setSrc(url)}catch{}})();return()=>{controller.abort();if(url)URL.revokeObjectURL(url)}},[path]);return src?<img className="record-photo" src={src} alt={alt}/>:<div className="image-placeholder" aria-label="照片加载中"/>}
