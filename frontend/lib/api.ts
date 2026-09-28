@@ -1,4 +1,5 @@
-const base = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+// Production requests use the page's own origin through Nginx.
+const base = process.env.NODE_ENV === "production" ? "" : (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000");
 export function token(role: string) { return typeof window === "undefined" ? null : sessionStorage.getItem(`token:${role}`); }
 export function logout() { if(typeof window!=="undefined")["viewer","uploader","admin"].forEach(role=>sessionStorage.removeItem(`token:${role}`)); }
 export async function login(role: "viewer"|"uploader"|"admin", password: string) { const r=await fetch(`${base}/api/auth/${role}-login`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password})}); if(!r.ok) throw new Error((await r.json()).detail||"密码错误"); const data=await r.json(); ["viewer","uploader","admin"].forEach(name=>sessionStorage.removeItem(`token:${name}`)); sessionStorage.setItem(`token:${role}`,data.access_token); return data; }
