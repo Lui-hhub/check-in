@@ -12,6 +12,8 @@ export default function Admin(){
   const [image,setImage]=useState<File>();
   const [error,setError]=useState("");
   const [busy,setBusy]=useState(false);
+  const [importFile,setImportFile]=useState<File>();
+  const [importMessage,setImportMessage]=useState("");
   const [editing,setEditing]=useState<Student>();
   const [draft,setDraft]=useState({grade:"",name:"",subject:""});
   const router=useRouter();
@@ -45,6 +47,18 @@ export default function Admin(){
       data.append("embedding",face.embedding);data.append("face_image",face.blob,"student.jpg");
       await api("/api/students",{method:"POST",body:data},["admin"]);
       setForm({grade:"",name:"",subject:""});setImage(undefined);await refresh();
+    }catch(e){setError((e as Error).message)}finally{setBusy(false)}
+  }
+
+  async function importStudents(event:React.FormEvent){
+    event.preventDefault();setError("");setImportMessage("");setBusy(true);
+    try{
+      if(!importFile)throw new Error("请选择 .xlsx 文件");
+      const data=new FormData();data.append("file",importFile);
+      const result=await api("/api/students/import",{method:"POST",body:data},["admin"]);
+      setImportFile(undefined);await refresh();
+      setImportMessage(`已导入 ${result.created} 位学生${result.errors.length?`，${result.errors.length} 行未导入`:""}。导入的学生还需要录入人脸照片。`);
+      if(result.errors.length)setError(result.errors.join("；"));
     }catch(e){setError((e as Error).message)}finally{setBusy(false)}
   }
 
@@ -84,6 +98,12 @@ export default function Admin(){
         </div>
         {image&&<p className="camera-state">已选择：{image.name}</p>}
         {error&&<p className="form-error" role="alert">{error}</p>}
+      </form>
+      <form className="import-form" onSubmit={importStudents}>
+        <div><p className="eyebrow">批量录入</p><h2>从 Excel 导入</h2><p className="heading-note">第一行必须包含：年级、姓名、补课科目。导入后再为学生录入人脸照片。</p></div>
+        <div className="import-actions"><input className="file-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={event=>setImportFile(event.target.files?.[0])} /><button className="secondary-button" disabled={busy||!importFile}>{busy?"正在导入…":"导入 Excel"}</button></div>
+        {importFile&&<p className="camera-state">已选择：{importFile.name}</p>}
+        {importMessage&&<p className="form-success" role="status">{importMessage}</p>}
       </form>
       <div className="section-heading"><h2>学生列表</h2><span className="list-meta">{list.filter(student=>!student.is_deleted).length} 位在读学生</span></div>
       <section className="student-list" aria-label="学生列表">

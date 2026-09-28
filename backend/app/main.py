@@ -9,13 +9,14 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
+from openpyxl import load_workbook
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from .auth import create_token, require_any, require_role
 from .config import get_settings
 from .db import get_db
 from .models import Checkin, Student
-from .schemas import CheckinResponse, LoginRequest, StudentFields, StudentResponse, TokenResponse
+from .schemas import CheckinResponse, LoginRequest, StudentFields, StudentImportResponse, StudentResponse, TokenResponse
 
 settings = get_settings()
 media_root = Path(settings.media_dir).resolve()
@@ -89,6 +90,47 @@ async def add_student(grade: Annotated[str, Form()], name: Annotated[str, Form()
     path = await save_upload(face_image, "students")
     return student_out(await create_student(db, grade, name, subject, parse_embedding(embedding), path))
 
+@app.post("/api/students/import", response_model=StudentImportResponse)
+async def import_students(file: Annotated[UploadFile, File()], _: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
+    if not file.filename or not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(400, "请上传 .xlsx 格式的 Excel 文件")
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(413, "Excel 文件不能超过 5MB")
+    try:
+        workbook = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        sheet = workbook.active
+        rows = sheet.iter_rows(values_only=True)
+        headers = next(rows, None)
+        if not headers:
+            raise HTTPException(400, "Excel 文件没有表头")
+        aliases = {"年级": "grade", "grade": "grade", "姓名": "name", "name": "name", "补课科目": "subject", "科目": "subject", "subject": "subject"}
+        columns = {aliases.get(str(value).strip().lower()): index for index, value in enumerate(headers) if value is not None and aliases.get(str(value).strip().lower())}
+        missing = [label for label, key in (("年级", "grade"), ("姓名", "name"), ("补课科目", "subject")) if key not in columns]
+        if missing:
+            raise HTTPException(400, f"Excel 缺少列：{', '.join(missing)}")
+        created = 0
+        errors: list[str] = []
+        for row_number, row in enumerate(rows, start=2):
+            values = {key: str(row[index]).strip() if index < len(row) and row[index] is not None else "" for key, index in columns.items()}
+            if not any(values.values()):
+                continue
+            missing_values = [label for label, key in (("年级", "grade"), ("姓名", "name"), ("补课科目", "subject")) if not values[key]]
+            if missing_values:
+                errors.append(f"第 {row_number} 行缺少：{', '.join(missing_values)}")
+                continue
+            student = Student(grade=values["grade"], name=values["name"], subject=values["subject"], display_name=await unique_display_name(db, values["grade"], values["name"], values["subject"]), face_embedding=[], face_image_path=None)
+            db.add(student)
+            await db.flush()
+            created += 1
+        await db.commit()
+        workbook.close()
+        return StudentImportResponse(created=created, errors=errors)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(400, "无法读取 Excel 文件，请确认文件未损坏且为 .xlsx 格式") from exc
+
 @app.patch("/api/students/{student_id}", response_model=StudentResponse)
 async def edit_student(student_id: int, fields: StudentFields, _: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
     student = await db.get(Student, student_id)
@@ -119,7 +161,7 @@ async def add_checkin(embedding: Annotated[str, Form()], photo: Annotated[Upload
     if student and student.is_deleted: raise HTTPException(422, "学生已删除")
     matched_distance = None
     if not student:
-        students = list((await db.execute(select(Student).where(Student.is_deleted.is_(False)))).scalars())
+        students = [student for student in (await db.execute(select(Student).where(Student.is_deleted.is_(False)))).scalars() if len(student.face_embedding or []) == 128]
         if not students: raise HTTPException(422, "暂无学生资料")
         student, matched_distance = min(((s, distance(vector, s.face_embedding)) for s in students), key=lambda x: x[1])
         if matched_distance > settings.face_match_threshold: raise HTTPException(422, "未识别到学生")

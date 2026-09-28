@@ -30,3 +30,7 @@ class StudentFields(BaseModel):
     grade: str = Field(min_length=1, max_length=50)
     name: str = Field(min_length=1, max_length=100)
     subject: str = Field(min_length=1, max_length=100)
+
+class StudentImportResponse(BaseModel):
+    created: int
+    errors: list[str]

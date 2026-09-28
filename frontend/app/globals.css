@@ -156,6 +156,11 @@ h2 { margin-bottom: 7px; font-size: 17px; font-weight: 650; }
 .empty-copy { margin: 0; color: var(--muted); font-size: 13px; }
 
 .admin-form { padding: 22px 0 30px; border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line); }
+.import-form { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; padding: 22px 0 26px; border-bottom: 1px solid var(--line); }
+.import-form h2 { margin-bottom: 0; }
+.import-form .heading-note { max-width: 590px; margin-bottom: 0; }
+.import-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.import-actions .file-input { width: 220px; }
 .admin-form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: flex-end; }
 .file-input { min-height: 46px; padding: 8px; border: 1px dashed var(--line-strong); border-radius: 4px; background: #fbfcfa; color: var(--muted); font-size: 12px; }
 .admin-submit { min-height: 46px; }
@@ -185,6 +190,8 @@ h2 { margin-bottom: 7px; font-size: 17px; font-weight: 650; }
   .manual-panel { padding-top: 0; }
   .admin-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-submit { grid-column: 1 / -1; }
+  .import-form { align-items: stretch; flex-direction: column; gap: 14px; }
+  .import-actions { flex-basis: auto; }
 }
 @media (max-width: 480px) {
   .site-header { padding: 0 14px; }
@@ -201,6 +208,8 @@ h2 { margin-bottom: 7px; font-size: 17px; font-weight: 650; }
   .record-mark { display: none; }
   .admin-form-grid { grid-template-columns: 1fr; }
   .admin-submit { grid-column: auto; }
+  .import-actions { align-items: stretch; flex-direction: column; }
+  .import-actions .file-input { width: 100%; }
   .student-row { align-items: flex-start; flex-direction: column; }
   .student-actions { justify-content: flex-start; }
 }
