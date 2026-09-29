@@ -27,6 +27,8 @@
 
 5. 浏览器打开 `http://localhost:3000`。摄像头仅可在 localhost 或 HTTPS 页面使用。
 
+后端会记录请求方法、路径、状态码、耗时、登录结果、学生管理操作和签到匹配结果；不会记录密码、JWT 或人脸特征。开发时可在 `backend/.env` 设置 `LOG_LEVEL=DEBUG`，启动 API 的终端会直接显示日志。前端 API 调试日志只在开发模式下输出，可在浏览器开发者工具的 Console 中查看。
+
 服务器首次部署可执行 `deploy/bootstrap-server.sh`。它会安装 PostgreSQL、创建 `checkin` 数据库用户、生成应用密码，并完成 systemd、Nginx 和迁移配置；生成的首次登录密码保存在服务器 `backend/INITIAL-CREDENTIALS.txt`，请立即妥善保存并删除该文件。
 
 ### 服务器首次接入

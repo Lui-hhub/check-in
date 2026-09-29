@@ -1,11 +1,13 @@
 import json
 import io
+import logging
 import math
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
@@ -19,6 +21,11 @@ from .models import Checkin, Student
 from .schemas import CheckinResponse, LoginRequest, StudentFields, StudentImportResponse, StudentResponse, TokenResponse
 
 settings = get_settings()
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("checkin.api")
 media_root = Path(settings.media_dir).resolve()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -29,6 +36,19 @@ app = FastAPI(title="补习班签到 API", lifespan=lifespan)
 allowed_origins = [origin.strip().rstrip("/") for origin in settings.frontend_origin.split(",") if origin.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
+@app.middleware("http")
+async def request_logging(request: Request, call_next):
+    started = time.perf_counter()
+    client = request.client.host if request.client else "unknown"
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("request failed method=%s path=%s client=%s", request.method, request.url.path, client)
+        raise
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    logger.info("request method=%s path=%s status=%s duration_ms=%.1f client=%s", request.method, request.url.path, response.status_code, elapsed_ms, client)
+    return response
+
 @app.get("/health")
 async def health(): return {"status": "ok"}
 
@@ -36,7 +56,9 @@ async def health(): return {"status": "ok"}
 async def login(kind: str, body: LoginRequest):
     passwords = {"viewer": settings.viewer_password, "uploader": settings.uploader_password, "admin": settings.admin_password}
     if kind not in passwords or body.password != passwords[kind]:
+        logger.warning("login failed role=%s", kind)
         raise HTTPException(status_code=401, detail="密码错误")
+    logger.info("login succeeded role=%s", kind)
     return TokenResponse(access_token=create_token(kind), role=kind)
 
 def student_out(s: Student) -> StudentResponse:
@@ -89,7 +111,9 @@ async def create_student(db: AsyncSession, grade: str, name: str, subject: str, 
 @app.post("/api/students", response_model=StudentResponse)
 async def add_student(grade: Annotated[str, Form()], name: Annotated[str, Form()], subject: Annotated[str, Form()], embedding: Annotated[str, Form()], face_image: Annotated[UploadFile, File()], _: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
     path = await save_upload(face_image, "students")
-    return student_out(await create_student(db, grade, name, subject, parse_embedding(embedding), path))
+    student = await create_student(db, grade, name, subject, parse_embedding(embedding), path)
+    logger.info("student created student_id=%s grade=%s subject=%s", student.id, grade, subject)
+    return student_out(student)
 
 @app.post("/api/students/import", response_model=StudentImportResponse)
 async def import_students(file: Annotated[UploadFile, File()], _: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
@@ -126,6 +150,7 @@ async def import_students(file: Annotated[UploadFile, File()], _: dict = Depends
             created += 1
         await db.commit()
         workbook.close()
+        logger.info("students imported created=%s errors=%s", created, len(errors))
         return StudentImportResponse(created=created, errors=errors)
     except HTTPException:
         raise
@@ -140,20 +165,26 @@ async def edit_student(student_id: int, fields: StudentFields, _: dict = Depends
     student.grade, student.name, student.subject = fields.grade, fields.name, fields.subject
     if changed_identity:
         student.display_name = await unique_display_name(db, fields.grade, fields.name, fields.subject, exclude_id=student.id)
-    await db.commit(); await db.refresh(student); return student_out(student)
+    await db.commit(); await db.refresh(student)
+    logger.info("student updated student_id=%s grade=%s subject=%s", student.id, student.grade, student.subject)
+    return student_out(student)
 
 @app.post("/api/students/{student_id}/face", response_model=StudentResponse)
 async def replace_face(student_id: int, embedding: Annotated[str, Form()], face_image: Annotated[UploadFile, File()], _: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
     student = await db.get(Student, student_id)
     if not student: raise HTTPException(404, "学生不存在")
     student.face_embedding = parse_embedding(embedding); student.face_image_path = await save_upload(face_image, "students")
-    await db.commit(); await db.refresh(student); return student_out(student)
+    await db.commit(); await db.refresh(student)
+    logger.info("student face updated student_id=%s", student.id)
+    return student_out(student)
 
 @app.delete("/api/students/{student_id}")
 async def delete_student(student_id: int, _: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
     student = await db.get(Student, student_id)
     if not student: raise HTTPException(404, "学生不存在")
-    student.is_deleted = True; await db.commit(); return {"ok": True}
+    student.is_deleted = True; await db.commit()
+    logger.info("student soft deleted student_id=%s", student.id)
+    return {"ok": True}
 
 @app.post("/api/checkins", response_model=CheckinResponse)
 async def add_checkin(embedding: Annotated[str, Form()], photo: Annotated[UploadFile, File()], student_id: Annotated[int | None, Form()] = None, _: dict = Depends(require_role("uploader")), db: AsyncSession = Depends(get_db)):
@@ -165,7 +196,12 @@ async def add_checkin(embedding: Annotated[str, Form()], photo: Annotated[Upload
         students = [student for student in (await db.execute(select(Student).where(Student.is_deleted.is_(False)))).scalars() if len(student.face_embedding or []) == 128]
         if not students: raise HTTPException(422, "暂无学生资料")
         student, matched_distance = min(((s, distance(vector, s.face_embedding)) for s in students), key=lambda x: x[1])
-        if matched_distance > settings.face_match_threshold: raise HTTPException(422, "未识别到学生")
+        logger.info("face match candidate student_id=%s distance=%.4f threshold=%.4f", student.id, matched_distance, settings.face_match_threshold)
+        if matched_distance > settings.face_match_threshold:
+            logger.warning("face match failed distance=%.4f threshold=%.4f", matched_distance, settings.face_match_threshold)
+            raise HTTPException(422, "未识别到学生")
+    else:
+        logger.info("manual student selected student_id=%s", student.id)
     if student.is_deleted: raise HTTPException(422, "学生已删除")
     path = await save_upload(photo, "checkins")
     checkin = Checkin(student_id=student.id, photo_path=path, grade_snapshot=student.grade, name_snapshot=student.display_name, subject_snapshot=student.subject)
@@ -176,6 +212,7 @@ async def add_checkin(embedding: Annotated[str, Form()], photo: Annotated[Upload
         except OSError: pass
         await db.delete(record)
     await db.commit(); await db.refresh(checkin)
+    logger.info("checkin created checkin_id=%s student_id=%s distance=%s", checkin.id, student.id, f"{matched_distance:.4f}" if matched_distance is not None else "manual")
     return CheckinResponse(id=checkin.id, student_id=student.id, photo_url=f"/media/{path}", grade=checkin.grade_snapshot, name=checkin.name_snapshot, subject=checkin.subject_snapshot, created_at=checkin.created_at, distance=matched_distance)
 
 @app.get("/api/checkins", response_model=list[CheckinResponse])

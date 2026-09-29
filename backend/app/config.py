@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     face_match_threshold: float = 0.60
     media_dir: str = "./data/media"
     frontend_origin: str = "http://localhost:3000"
+    log_level: str = "INFO"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 @lru_cache
