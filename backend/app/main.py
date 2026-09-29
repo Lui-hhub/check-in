@@ -123,7 +123,7 @@ async def create_student(db: AsyncSession, grade: str, name: str, subject: str |
 @app.post("/api/students", response_model=StudentResponse)
 async def add_student(grade: Annotated[str, Form()], name: Annotated[str, Form()], subjects: Annotated[str, Form()], embedding: Annotated[str, Form()], face_image: Annotated[UploadFile, File()], _: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
     path = await save_upload(face_image, "students")
-    subject_list = [item.strip() for item in subjects.split(",") if item.strip()]
+    subject_list = [item.strip() for item in subjects.replace("，", ",").split(",") if item.strip()]
     if not subject_list: raise HTTPException(400, "至少填写一个科目")
     student = await create_student(db, grade, name, subject_list, parse_embedding(embedding), path)
     logger.info("student created student_id=%s grade=%s subject=%s", student.id, grade, subject)
@@ -159,7 +159,7 @@ async def import_students(file: Annotated[UploadFile, File()], _: dict = Depends
                 errors.append(f"第 {row_number} 行缺少：{', '.join(missing_values)}")
                 continue
             student = Student(id=await next_student_id(db), grade=values["grade"], name=values["name"], display_name=await unique_display_name(db, values["grade"], values["name"]), face_embedding=[], face_image_path=None)
-            student.subjects = [StudentSubject(subject=item.strip()) for item in values["subject"].split(",") if item.strip()]
+            student.subjects = [StudentSubject(subject=item.strip()) for item in values["subject"].replace("，", ",").split(",") if item.strip()]
             db.add(student)
             await db.flush()
             created += 1

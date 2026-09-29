@@ -67,7 +67,7 @@ export default function Admin(){
   }
   async function saveEdit(event:React.FormEvent){
     event.preventDefault();if(!editing)return;setError("");setBusy(true);
-    try{await api(`/api/students/${editing.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({...draft,subjects:draft.subject.split(",").map(item=>item.trim()).filter(Boolean)})},["admin"]);setEditing(undefined);await refresh()}
+    try{await api(`/api/students/${editing.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({...draft,subjects:draft.subject.split(/[,，]/).map(item=>item.trim()).filter(Boolean)})},["admin"]);setEditing(undefined);await refresh()}
     catch(e){setError((e as Error).message)}finally{setBusy(false)}
   }
   async function replaceFace(id:number,file?:File){
@@ -92,7 +92,7 @@ export default function Admin(){
         <div className="admin-form-grid">
           <label className="field">年级<input value={form.grade} onChange={event=>setForm({...form,grade:event.target.value})} placeholder="例如：五年级" required /></label>
           <label className="field">姓名<input value={form.name} onChange={event=>setForm({...form,name:event.target.value})} placeholder="学生姓名" required /></label>
-          <label className="field">补课科目<input value={form.subject} onChange={event=>setForm({...form,subject:event.target.value})} placeholder="例如：数学" required /></label>
+          <label className="field">补课科目<input value={form.subject} onChange={event=>setForm({...form,subject:event.target.value})} placeholder="多个科目用逗号分隔，如：数学，英语" required /></label>
           <label className="field">人脸照片<input className="file-input" type="file" accept="image/*" capture="user" onChange={event=>setImage(event.target.files?.[0])} required /></label>
           <button className="primary-button admin-submit" disabled={busy}>{busy?"正在处理…":"保存学生"}</button>
         </div>
@@ -123,7 +123,7 @@ export default function Admin(){
         <p className="eyebrow">学生资料</p><h2 id="edit-title">编辑 {editing.display_name}</h2>
         <label className="field">年级<input value={draft.grade} onChange={event=>setDraft({...draft,grade:event.target.value})} required /></label>
         <label className="field">姓名<input value={draft.name} onChange={event=>setDraft({...draft,name:event.target.value})} required /></label>
-        <label className="field">补课科目<input value={draft.subject} onChange={event=>setDraft({...draft,subject:event.target.value})} required /></label>
+        <label className="field">补课科目<input value={draft.subject} onChange={event=>setDraft({...draft,subject:event.target.value})} placeholder="多个科目用逗号分隔，如：数学，英语" required /></label>
         {error&&<p className="form-error" role="alert">{error}</p>}
         <div className="student-actions"><button className="secondary-button" type="button" onClick={()=>setEditing(undefined)}>取消</button><button className="primary-button" disabled={busy}>{busy?"正在保存…":"保存修改"}</button></div>
       </form>
