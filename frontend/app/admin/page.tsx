@@ -15,6 +15,7 @@ export default function Admin(){
   const [importFile,setImportFile]=useState<File>();
   const [importMessage,setImportMessage]=useState("");
   const [editing,setEditing]=useState<Student>();
+  const [view,setView]=useState<"active"|"graduates">("active");
   const [draft,setDraft]=useState({grade:"",name:"",subject:""});
   const router=useRouter();
 
@@ -105,9 +106,9 @@ export default function Admin(){
         {importFile&&<p className="camera-state">已选择：{importFile.name}</p>}
         {importMessage&&<p className="form-success" role="status">{importMessage}</p>}
       </form>
-      <div className="section-heading"><h2>学生列表</h2><span className="list-meta">{list.filter(student=>!student.is_deleted).length} 位在读学生</span></div>
-      <section className="student-list" aria-label="学生列表">
-        {list.map(student=><article className="student-row" key={student.id}>
+      <div className="section-heading"><div className="list-tabs" role="tablist" aria-label="学生列表视图"><button type="button" className={`list-tab${view==="active"?" list-tab-active":""}`} onClick={()=>setView("active")}>在读学生</button><button type="button" className={`list-tab${view==="graduates"?" list-tab-active":""}`} onClick={()=>setView("graduates")}>毕业生</button></div><span className="list-meta">{list.filter(student=>view==="active"?!student.is_deleted:student.is_deleted).length} 人</span></div>
+      <section className="student-list" aria-label={view==="active"?"在读学生列表":"毕业生列表"}>
+        {list.filter(student=>view==="active"?!student.is_deleted:student.is_deleted).map(student=><article className="student-row" key={student.id}>
           <div className="student-info"><strong className="student-title">{student.id} · {student.grade} · {student.display_name}</strong><span className="student-subtitle">{student.subjects.join("、")}{student.is_deleted&&<span className="deleted-label"> · 已删除</span>}</span></div>
           {!student.is_deleted&&<div className="student-actions">
             <button className="secondary-button" type="button" onClick={()=>edit(student)}>编辑资料</button>
@@ -115,7 +116,7 @@ export default function Admin(){
             <button className="danger-button" type="button" onClick={()=>remove(student.id)}>删除</button>
           </div>}
         </article>)}
-        {list.length===0&&<div className="empty-state"><span className="empty-mark">册</span><p className="empty-title">名册还是空的</p><p className="empty-copy">添加第一位学生后，可在此修改资料和人脸照片。</p></div>}
+        {list.filter(student=>view==="active"?!student.is_deleted:student.is_deleted).length===0&&<div className="empty-state"><span className="empty-mark">册</span><p className="empty-title">{view==="active"?"名册还是空的":"还没有毕业生记录"}</p><p className="empty-copy">{view==="active"?"添加第一位学生后，可在此修改资料和人脸照片。":"被软删除的学生会显示在这里，历史签到记录仍会保留。"}</p></div>}
       </section>
     </main>
     {editing&&<div className="dialog-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setEditing(undefined)}}>

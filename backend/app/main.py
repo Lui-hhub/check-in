@@ -238,7 +238,7 @@ async def add_checkin(embedding: Annotated[str, Form()], photo: Annotated[Upload
 
 @app.get("/api/checkins", response_model=list[CheckinResponse])
 async def list_checkins(_: dict = Depends(require_any("viewer", "admin")), db: AsyncSession = Depends(get_db)):
-    records = list((await db.execute(select(Checkin).order_by(desc(Checkin.created_at), desc(Checkin.id)))).scalars())
+    records = list((await db.execute(select(Checkin).join(Checkin.student).where(Student.is_deleted.is_(False)).order_by(desc(Checkin.created_at), desc(Checkin.id)))).scalars())
     return [CheckinResponse(id=r.id, student_id=r.student_id, photo_url=f"/media/{r.photo_path}", grade=r.grade_snapshot, name=r.name_snapshot, subject=r.subject_snapshot, created_at=r.created_at) for r in records]
 
 @app.get("/media/{path:path}")

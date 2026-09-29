@@ -142,6 +142,9 @@ h2 { margin-bottom: 7px; font-size: 17px; font-weight: 650; }
 .section-line { height: 1px; margin: 20px 0; border: 0; background: var(--line); }
 
 .list-meta { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.list-tabs { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 5px; background: #f1f4f1; }
+.list-tab { padding: 7px 13px; border: 0; border-radius: 3px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.list-tab-active { background: var(--surface); color: var(--green-dark); box-shadow: 0 1px 4px rgb(32 43 39 / 12%); font-weight: 700; }
 .records-list { border-top: 1px solid var(--line-strong); }
 .record { min-height: 112px; display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; gap: 18px; align-items: center; padding: 14px 4px; border-bottom: 1px solid var(--line); }
 .record-photo, .image-placeholder { width: 88px; height: 84px; display: block; object-fit: cover; border-radius: 3px; background: #e7ece7; }
