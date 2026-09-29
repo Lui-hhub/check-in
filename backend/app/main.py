@@ -10,9 +10,10 @@ from pathlib import Path
 from typing import Annotated
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
 from openpyxl import load_workbook
+from openpyxl import Workbook
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -171,6 +172,31 @@ async def import_students(file: Annotated[UploadFile, File()], _: dict = Depends
         raise
     except Exception as exc:
         raise HTTPException(400, "无法读取 Excel 文件，请确认文件未损坏且为 .xlsx 格式") from exc
+
+@app.get("/api/students/export")
+async def export_students(include_deleted: bool = False, ids: str | None = None, _: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
+    query = select(Student).options(selectinload(Student.subjects)).order_by(Student.grade, Student.display_name)
+    if include_deleted:
+        query = query.where(Student.is_deleted.is_(True))
+    else:
+        query = query.where(Student.is_deleted.is_(False))
+    if ids:
+        try:
+            selected = [int(value) for value in ids.split(",") if value]
+        except ValueError as exc:
+            raise HTTPException(400, "学生编号格式错误") from exc
+        query = query.where(Student.id.in_(selected))
+    students = list((await db.execute(query)).scalars())
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "学生名单"
+    sheet.append(["学生编号", "年级", "姓名", "补课科目", "状态"])
+    for student in students:
+        sheet.append([student.id, student.grade, student.display_name, "、".join(item.subject for item in student.subjects), "毕业生" if student.is_deleted else "在读"])
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=students.xlsx"})
 
 @app.patch("/api/students/{student_id}", response_model=StudentResponse)
 async def edit_student(student_id: int, fields: StudentFields, _: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
