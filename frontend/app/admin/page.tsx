@@ -4,7 +4,7 @@ import {api} from "../../lib/api";
 import {useRouter} from "next/navigation";
 import PageHeader from "../../components/PageHeader";
 
-type Student={id:number;grade:string;name:string;subject:string;display_name:string;is_deleted:boolean};
+type Student={id:number;grade:string;name:string;subjects:string[];display_name:string;is_deleted:boolean};
 
 export default function Admin(){
   const [list,setList]=useState<Student[]>([]);
@@ -43,7 +43,7 @@ export default function Admin(){
     try{
       if(!image)throw new Error("请选择人脸照片");
       const face=await faceData(image);const data=new FormData();
-      data.append("grade",form.grade);data.append("name",form.name);data.append("subject",form.subject);
+      data.append("grade",form.grade);data.append("name",form.name);data.append("subjects",form.subject);
       data.append("embedding",face.embedding);data.append("face_image",face.blob,"student.jpg");
       await api("/api/students",{method:"POST",body:data},["admin"]);
       setForm({grade:"",name:"",subject:""});setImage(undefined);await refresh();
@@ -63,11 +63,11 @@ export default function Admin(){
   }
 
   function edit(student:Student){
-    setEditing(student);setDraft({grade:student.grade,name:student.name,subject:student.subject});setError("");
+    setEditing(student);setDraft({grade:student.grade,name:student.name,subject:student.subjects.join(", ")});setError("");
   }
   async function saveEdit(event:React.FormEvent){
     event.preventDefault();if(!editing)return;setError("");setBusy(true);
-    try{await api(`/api/students/${editing.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(draft)},["admin"]);setEditing(undefined);await refresh()}
+    try{await api(`/api/students/${editing.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({...draft,subjects:draft.subject.split(",").map(item=>item.trim()).filter(Boolean)})},["admin"]);setEditing(undefined);await refresh()}
     catch(e){setError((e as Error).message)}finally{setBusy(false)}
   }
   async function replaceFace(id:number,file?:File){
@@ -108,7 +108,7 @@ export default function Admin(){
       <div className="section-heading"><h2>学生列表</h2><span className="list-meta">{list.filter(student=>!student.is_deleted).length} 位在读学生</span></div>
       <section className="student-list" aria-label="学生列表">
         {list.map(student=><article className="student-row" key={student.id}>
-          <div className="student-info"><strong className="student-title">{student.grade} · {student.display_name}</strong><span className="student-subtitle">{student.subject}{student.is_deleted&&<span className="deleted-label"> · 已删除</span>}</span></div>
+          <div className="student-info"><strong className="student-title">{student.id} · {student.grade} · {student.display_name}</strong><span className="student-subtitle">{student.subjects.join("、")}{student.is_deleted&&<span className="deleted-label"> · 已删除</span>}</span></div>
           {!student.is_deleted&&<div className="student-actions">
             <button className="secondary-button" type="button" onClick={()=>edit(student)}>编辑资料</button>
             <label className="secondary-button upload-button">重录照片<input type="file" accept="image/*" capture="user" disabled={busy} aria-label={`重新录入${student.display_name}的人脸照片`} onChange={event=>replaceFace(student.id,event.target.files?.[0])} /></label>

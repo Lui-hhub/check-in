@@ -4,7 +4,7 @@ import {api} from "../../lib/api";
 import {useRouter} from "next/navigation";
 import PageHeader from "../../components/PageHeader";
 
-type Student={id:number;grade:string;display_name:string;subject:string};
+type Student={id:number;grade:string;display_name:string;subjects:string[]};
 
 export default function CheckIn(){
   const video=useRef<HTMLVideoElement>(null);
@@ -16,6 +16,7 @@ export default function CheckIn(){
   const [error,setError]=useState("");
   const [result,setResult]=useState("");
   const [manual,setManual]=useState("");
+  const [manualSubject,setManualSubject]=useState("");
   const router=useRouter();
 
   useEffect(()=>{
@@ -87,6 +88,9 @@ export default function CheckIn(){
       form.append("photo",photo,"checkin.jpg");
       form.append("embedding",JSON.stringify(Array.from(descriptor||new Float32Array(128))));
       if(studentId)form.append("student_id",String(studentId));
+      const chosen=students.find(item=>item.id===studentId);
+      if(studentId && manualSubject) form.append("subject",manualSubject);
+      if(!studentId && chosen?.subjects.length===1) form.append("subject",chosen.subjects[0]);
       const data=await api("/api/checkins",{method:"POST",body:form},["uploader"]);
       setResult(`签到成功 · ${data.grade} ${data.name} · ${data.subject}`);
     }catch(e){setError((e as Error).message)}finally{setBusy(false)}
@@ -119,12 +123,13 @@ export default function CheckIn(){
           <h2 className="rule-title">手动选择学生</h2>
           <p className="heading-note">识别不到时，可用当前镜头画面完成签到。</p>
           <label className="field" htmlFor="student-choice">学生
-            <select className="select-control" id="student-choice" value={manual} onChange={e=>setManual(e.target.value)}>
-              <option value="">选择年级、姓名和科目</option>
-              {students.map(student=><option key={student.id} value={student.id}>{student.grade} · {student.display_name} · {student.subject}</option>)}
+            <select className="select-control" id="student-choice" value={manual} onChange={e=>{setManual(e.target.value);setManualSubject("")}}>
+              <option value="">选择年级和姓名</option>
+              {students.map(student=><option key={student.id} value={student.id}>{student.grade} · {student.display_name}</option>)}
             </select>
           </label>
-          <button className="secondary-button" type="button" disabled={!stream||!manual||busy} onClick={()=>submit(Number(manual))}>按所选学生签到</button>
+          {manual&&<label className="field">补课科目<select className="select-control" value={manualSubject} onChange={e=>setManualSubject(e.target.value)}><option value="">选择科目</option>{students.find(student=>student.id===Number(manual))?.subjects.map(subject=><option key={subject}>{subject}</option>)}</select></label>}
+          <button className="secondary-button" type="button" disabled={!stream||!manual||!manualSubject||busy} onClick={()=>submit(Number(manual))}>按所选学生签到</button>
           <hr className="section-line" />
           <p className="manual-note">每次签到都会保存一张照片。学生每天可签到多次，记录保留最近十次。</p>
         </section>

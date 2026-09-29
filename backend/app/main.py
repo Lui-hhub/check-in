@@ -4,6 +4,7 @@ import logging
 import math
 import time
 import uuid
+from datetime import datetime
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
@@ -12,12 +13,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
 from openpyxl import load_workbook
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from .auth import create_token, require_any, require_role
 from .config import get_settings
 from .db import get_db
-from .models import Checkin, Student
+from .models import Checkin, Student, StudentSubject
 from .schemas import CheckinResponse, LoginRequest, StudentFields, StudentImportResponse, StudentResponse, TokenResponse
 
 settings = get_settings()
@@ -62,15 +64,23 @@ async def login(kind: str, body: LoginRequest):
     return TokenResponse(access_token=create_token(kind), role=kind)
 
 def student_out(s: Student) -> StudentResponse:
-    return StudentResponse(id=s.id, grade=s.grade, name=s.name, subject=s.subject, display_name=s.display_name, is_deleted=s.is_deleted)
+    return StudentResponse(id=s.id, grade=s.grade, name=s.name, subjects=[item.subject for item in s.subjects], display_name=s.display_name, is_deleted=s.is_deleted)
 
-async def unique_display_name(db: AsyncSession, grade: str, name: str, subject: str, exclude_id: int | None = None) -> str:
-    query = select(Student).where(Student.grade == grade, Student.name == name, Student.subject == subject)
+async def unique_display_name(db: AsyncSession, grade: str, name: str, exclude_id: int | None = None) -> str:
+    query = select(Student).where(Student.grade == grade, Student.name == name)
     if exclude_id is not None: query = query.where(Student.id != exclude_id)
     result = await db.execute(query)
     existing = list(result.scalars())
     if not existing: return name
     return f"{name}-{max([int(s.display_name.rsplit('-', 1)[1]) for s in existing if s.display_name.startswith(name + '-') and s.display_name.rsplit('-', 1)[1].isdigit()] or [1]) + 1}"
+
+async def next_student_id(db: AsyncSession) -> int:
+    year = datetime.now().year
+    start, end = year * 10000, year * 10000 + 9999
+    value = await db.scalar(select(func.max(Student.id)).where(Student.id >= start, Student.id <= end))
+    if value is not None and value >= end:
+        raise HTTPException(409, "本年度学生编号已用完")
+    return (value or start) + 1
 
 async def save_upload(upload: UploadFile, folder: str) -> str:
     suffix = ".jpg"
@@ -100,18 +110,22 @@ def distance(a: list[float], b: list[float]) -> float:
 
 @app.get("/api/students", response_model=list[StudentResponse])
 async def list_students(include_deleted: bool = False, _: dict = Depends(require_any("uploader", "admin")), db: AsyncSession = Depends(get_db)):
-    query = select(Student).order_by(Student.grade, Student.display_name)
+    query = select(Student).options(selectinload(Student.subjects)).order_by(Student.grade, Student.display_name)
     if not include_deleted: query = query.where(Student.is_deleted.is_(False))
     return [student_out(s) for s in (await db.execute(query)).scalars()]
 
-async def create_student(db: AsyncSession, grade: str, name: str, subject: str, embedding: list[float], image_path: str | None):
-    student = Student(grade=grade, name=name, subject=subject, display_name=await unique_display_name(db, grade, name, subject), face_embedding=embedding, face_image_path=image_path)
+async def create_student(db: AsyncSession, grade: str, name: str, subject: str | list[str], embedding: list[float], image_path: str | None):
+    subjects = [subject] if isinstance(subject, str) else subject
+    student = Student(id=await next_student_id(db), grade=grade, name=name, display_name=await unique_display_name(db, grade, name), face_embedding=embedding, face_image_path=image_path)
+    student.subjects = [StudentSubject(subject=item.strip()) for item in subjects if item.strip()]
     db.add(student); await db.commit(); await db.refresh(student); return student
 
 @app.post("/api/students", response_model=StudentResponse)
-async def add_student(grade: Annotated[str, Form()], name: Annotated[str, Form()], subject: Annotated[str, Form()], embedding: Annotated[str, Form()], face_image: Annotated[UploadFile, File()], _: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
+async def add_student(grade: Annotated[str, Form()], name: Annotated[str, Form()], subjects: Annotated[str, Form()], embedding: Annotated[str, Form()], face_image: Annotated[UploadFile, File()], _: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
     path = await save_upload(face_image, "students")
-    student = await create_student(db, grade, name, subject, parse_embedding(embedding), path)
+    subject_list = [item.strip() for item in subjects.split(",") if item.strip()]
+    if not subject_list: raise HTTPException(400, "至少填写一个科目")
+    student = await create_student(db, grade, name, subject_list, parse_embedding(embedding), path)
     logger.info("student created student_id=%s grade=%s subject=%s", student.id, grade, subject)
     return student_out(student)
 
@@ -144,7 +158,8 @@ async def import_students(file: Annotated[UploadFile, File()], _: dict = Depends
             if missing_values:
                 errors.append(f"第 {row_number} 行缺少：{', '.join(missing_values)}")
                 continue
-            student = Student(grade=values["grade"], name=values["name"], subject=values["subject"], display_name=await unique_display_name(db, values["grade"], values["name"], values["subject"]), face_embedding=[], face_image_path=None)
+            student = Student(id=await next_student_id(db), grade=values["grade"], name=values["name"], display_name=await unique_display_name(db, values["grade"], values["name"]), face_embedding=[], face_image_path=None)
+            student.subjects = [StudentSubject(subject=item.strip()) for item in values["subject"].split(",") if item.strip()]
             db.add(student)
             await db.flush()
             created += 1
@@ -159,19 +174,21 @@ async def import_students(file: Annotated[UploadFile, File()], _: dict = Depends
 
 @app.patch("/api/students/{student_id}", response_model=StudentResponse)
 async def edit_student(student_id: int, fields: StudentFields, _: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
-    student = await db.get(Student, student_id)
+    student = await db.scalar(select(Student).options(selectinload(Student.subjects)).where(Student.id == student_id))
     if not student: raise HTTPException(404, "学生不存在")
-    changed_identity = (student.grade, student.name, student.subject) != (fields.grade, fields.name, fields.subject)
-    student.grade, student.name, student.subject = fields.grade, fields.name, fields.subject
+    changed_identity = (student.grade, student.name) != (fields.grade, fields.name)
+    student.grade, student.name = fields.grade, fields.name
     if changed_identity:
-        student.display_name = await unique_display_name(db, fields.grade, fields.name, fields.subject, exclude_id=student.id)
+        student.display_name = await unique_display_name(db, fields.grade, fields.name, exclude_id=student.id)
+    student.subjects.clear()
+    student.subjects.extend(StudentSubject(subject=item.strip()) for item in fields.subjects if item.strip())
     await db.commit(); await db.refresh(student)
-    logger.info("student updated student_id=%s grade=%s subject=%s", student.id, student.grade, student.subject)
+    logger.info("student updated student_id=%s grade=%s subjects=%s", student.id, student.grade, ",".join(fields.subjects))
     return student_out(student)
 
 @app.post("/api/students/{student_id}/face", response_model=StudentResponse)
 async def replace_face(student_id: int, embedding: Annotated[str, Form()], face_image: Annotated[UploadFile, File()], _: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
-    student = await db.get(Student, student_id)
+    student = await db.scalar(select(Student).options(selectinload(Student.subjects)).where(Student.id == student_id))
     if not student: raise HTTPException(404, "学生不存在")
     student.face_embedding = parse_embedding(embedding); student.face_image_path = await save_upload(face_image, "students")
     await db.commit(); await db.refresh(student)
@@ -187,13 +204,13 @@ async def delete_student(student_id: int, _: dict = Depends(require_role("admin"
     return {"ok": True}
 
 @app.post("/api/checkins", response_model=CheckinResponse)
-async def add_checkin(embedding: Annotated[str, Form()], photo: Annotated[UploadFile, File()], student_id: Annotated[int | None, Form()] = None, _: dict = Depends(require_role("uploader")), db: AsyncSession = Depends(get_db)):
+async def add_checkin(embedding: Annotated[str, Form()], photo: Annotated[UploadFile, File()], student_id: Annotated[int | None, Form()] = None, subject: Annotated[str | None, Form()] = None, _: dict = Depends(require_role("uploader")), db: AsyncSession = Depends(get_db)):
     vector = parse_embedding(embedding)
-    student = await db.get(Student, student_id) if student_id else None
+    student = await db.scalar(select(Student).options(selectinload(Student.subjects)).where(Student.id == student_id)) if student_id else None
     if student and student.is_deleted: raise HTTPException(422, "学生已删除")
     matched_distance = None
     if not student:
-        students = [student for student in (await db.execute(select(Student).where(Student.is_deleted.is_(False)))).scalars() if len(student.face_embedding or []) == 128]
+        students = [student for student in (await db.execute(select(Student).options(selectinload(Student.subjects)).where(Student.is_deleted.is_(False)))).scalars() if len(student.face_embedding or []) == 128]
         if not students: raise HTTPException(422, "暂无学生资料")
         student, matched_distance = min(((s, distance(vector, s.face_embedding)) for s in students), key=lambda x: x[1])
         logger.info("face match candidate student_id=%s distance=%.4f threshold=%.4f", student.id, matched_distance, settings.face_match_threshold)
@@ -203,8 +220,12 @@ async def add_checkin(embedding: Annotated[str, Form()], photo: Annotated[Upload
     else:
         logger.info("manual student selected student_id=%s", student.id)
     if student.is_deleted: raise HTTPException(422, "学生已删除")
+    available_subjects = [item.subject for item in student.subjects]
+    if subject not in available_subjects:
+        if subject is None and len(available_subjects) == 1: subject = available_subjects[0]
+        else: raise HTTPException(422, "请选择该学生的补课科目")
     path = await save_upload(photo, "checkins")
-    checkin = Checkin(student_id=student.id, photo_path=path, grade_snapshot=student.grade, name_snapshot=student.display_name, subject_snapshot=student.subject)
+    checkin = Checkin(student_id=student.id, photo_path=path, grade_snapshot=student.grade, name_snapshot=student.display_name, subject_snapshot=subject)
     db.add(checkin); await db.flush()
     old = list((await db.execute(select(Checkin).where(Checkin.student_id == student.id).order_by(desc(Checkin.created_at), desc(Checkin.id)))).scalars())
     for record in old[10:]:

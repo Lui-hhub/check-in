@@ -12,7 +12,7 @@ class StudentResponse(BaseModel):
     id: int
     grade: str
     name: str
-    subject: str
+    subjects: list[str]
     display_name: str
     is_deleted: bool
 
@@ -29,7 +29,7 @@ class CheckinResponse(BaseModel):
 class StudentFields(BaseModel):
     grade: str = Field(min_length=1, max_length=50)
     name: str = Field(min_length=1, max_length=100)
-    subject: str = Field(min_length=1, max_length=100)
+    subjects: list[str] = Field(min_length=1)
 
 class StudentImportResponse(BaseModel):
     created: int
