@@ -15,6 +15,12 @@ def upgrade():
     op.create_index("ix_student_subjects_student_id", "student_subjects", ["student_id"])
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
+        # Convert legacy integer ids to YYYY#### while keeping check-in foreign keys.
+        op.execute("ALTER TABLE checkins DROP CONSTRAINT IF EXISTS checkins_student_id_fkey")
+        op.execute("CREATE TEMP TABLE student_id_map AS SELECT id AS old_id, (EXTRACT(YEAR FROM created_at)::integer * 10000 + ROW_NUMBER() OVER (PARTITION BY EXTRACT(YEAR FROM created_at) ORDER BY created_at, id))::integer AS new_id FROM students")
+        op.execute("UPDATE checkins c SET student_id = m.new_id FROM student_id_map m WHERE c.student_id = m.old_id")
+        op.execute("UPDATE students s SET id = m.new_id FROM student_id_map m WHERE s.id = m.old_id")
+        op.execute("ALTER TABLE checkins ADD CONSTRAINT checkins_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id)")
         op.execute("INSERT INTO student_subjects (student_id, subject) SELECT id, subject FROM students")
     else:
         rows = bind.execute(sa.text("SELECT id, subject FROM students")).fetchall()
