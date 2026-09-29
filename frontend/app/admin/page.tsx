@@ -3,9 +3,12 @@ import {useEffect,useState} from "react";
 import {api,download} from "../../lib/api";
 import {useRouter} from "next/navigation";
 import PageHeader from "../../components/PageHeader";
+import DropdownField from "../../components/DropdownField";
 
 type Student={id:number;grade:string;name:string;subjects:string[];display_name:string;is_deleted:boolean};
 const grades=["一年级","二年级","三年级","四年级","五年级","六年级","初一","初二","初三","高一","高二","高三"];
+const subjects=["语文","数学","英语","政治","历史","地理","物理","化学","生物"];
+const emptyFilters={id:"",grade:"",name:"",subject:""};
 
 export default function Admin(){
   const [list,setList]=useState<Student[]>([]);
@@ -17,7 +20,10 @@ export default function Admin(){
   const [importMessage,setImportMessage]=useState("");
   const [editing,setEditing]=useState<Student>();
   const [view,setView]=useState<"active"|"graduates">("active");
+  const [filters,setFilters]=useState(emptyFilters);
   const [selected,setSelected]=useState<number[]>([]);
+  const [page,setPage]=useState(1);
+  const pageSize=20;
   const [draft,setDraft]=useState({grade:"",name:"",subject:""});
   const router=useRouter();
 
@@ -26,13 +32,30 @@ export default function Admin(){
     catch(e){setError((e as Error).message)}
   }
   useEffect(()=>{refresh()},[]);
-  const visible=list.filter(student=>view==="active"?!student.is_deleted:student.is_deleted);
+  const viewStudents=list.filter(student=>view==="active"?!student.is_deleted:student.is_deleted);
+  const hasFilters=Object.values(filters).some(value=>value.trim()!=="");
+  const visible=viewStudents.filter(student=>
+    (!filters.id.trim()||String(student.id)===filters.id.trim())&&
+    (!filters.grade||student.grade===filters.grade)&&
+    (!filters.name.trim()||student.name.toLocaleLowerCase().includes(filters.name.trim().toLocaleLowerCase()))&&
+    (!filters.subject||student.subjects.includes(filters.subject))
+  );
+  const filterGrades=Array.from(new Set([...grades,...list.map(student=>student.grade)])).filter(Boolean);
+  const filterSubjects=Array.from(new Set([...subjects,...list.flatMap(student=>student.subjects)])).filter(Boolean);
+  const pageCount=Math.max(1,Math.ceil(visible.length/pageSize));
+  const currentPage=Math.min(page,pageCount);
+  const pageItems=visible.slice((currentPage-1)*pageSize,currentPage*pageSize);
+  useEffect(()=>{setPage(current=>Math.min(current,pageCount))},[pageCount]);
+  const selectedVisible=selected.filter(id=>visible.some(student=>student.id===id));
+  function updateFilters(next:typeof emptyFilters){setFilters(next);setPage(1);setSelected([])}
+  const selectedSubjects=form.subject?form.subject.split(/[,，]/).map(item=>item.trim()).filter(Boolean):[];
   const allSelected=visible.length>0&&visible.every(student=>selected.includes(student.id));
   function toggleAll(){setSelected(allSelected?selected.filter(id=>!visible.some(student=>student.id===id)):Array.from(new Set([...selected,...visible.map(student=>student.id)])))}
   function toggle(id:number){setSelected(selected.includes(id)?selected.filter(value=>value!==id):[...selected,id])}
   async function exportStudents(){
+    if(!selectedVisible.length)return;
     const params=new URLSearchParams({include_deleted:String(view==="graduates")});
-    if(selected.length)params.set("ids",selected.filter(id=>visible.some(student=>student.id===id)).join(","));
+    params.set("ids",selectedVisible.join(","));
     try{await download(`/api/students/export?${params.toString()}`,view==="graduates"?"毕业生名单.xlsx":"在读学生名单.xlsx",["admin"])}catch(e){setError((e as Error).message)}
   }
 
@@ -53,7 +76,9 @@ export default function Admin(){
   async function add(event:React.FormEvent){
     event.preventDefault();setError("");setBusy(true);
     try{
+      if(!form.grade)throw new Error("请选择年级");
       if(!image)throw new Error("请选择人脸照片");
+      if(!form.subject)throw new Error("请选择补课科目");
       const face=await faceData(image);const data=new FormData();
       data.append("grade",form.grade);data.append("name",form.name);data.append("subjects",form.subject);
       data.append("embedding",face.embedding);data.append("face_image",face.blob,"student.jpg");
@@ -102,9 +127,9 @@ export default function Admin(){
       <form className="admin-form" onSubmit={add}>
         <h2>新增学生</h2>
         <div className="admin-form-grid">
-          <label className="field">年级<select className="select-control" value={form.grade} onChange={event=>setForm({...form,grade:event.target.value})} required><option value="">选择年级</option>{grades.map(grade=><option key={grade}>{grade}</option>)}</select></label>
+          <DropdownField label="年级" placeholder="选择年级" options={grades} value={form.grade?[form.grade]:[]} onChange={value=>setForm(current=>({...current,grade:value[0]??""}))} />
           <label className="field">姓名<input value={form.name} onChange={event=>setForm({...form,name:event.target.value})} placeholder="学生姓名" required /></label>
-          <label className="field">补课科目<input value={form.subject} onChange={event=>setForm({...form,subject:event.target.value})} placeholder="多个科目用逗号分隔，如：数学，英语" required /></label>
+          <DropdownField label="补课科目" placeholder="选择科目" options={subjects} value={selectedSubjects} multiple onChange={value=>setForm(current=>({...current,subject:value.join(",")}))} />
           <label className="field">人脸照片<input className="file-input" type="file" accept="image/*" capture="user" onChange={event=>setImage(event.target.files?.[0])} required /></label>
           <button className="primary-button admin-submit" disabled={busy}>{busy?"正在处理…":"保存学生"}</button>
         </div>
@@ -117,10 +142,17 @@ export default function Admin(){
         {importFile&&<p className="camera-state">已选择：{importFile.name}</p>}
         {importMessage&&<p className="form-success" role="status">{importMessage}</p>}
       </form>
-      <div className="section-heading"><div className="list-tabs" role="tablist" aria-label="学生列表视图"><button type="button" className={`list-tab${view==="active"?" list-tab-active":""}`} onClick={()=>{setView("active");setSelected([])}}>在读学生</button><button type="button" className={`list-tab${view==="graduates"?" list-tab-active":""}`} onClick={()=>{setView("graduates");setSelected([])}}>毕业生</button></div><span className="list-meta">{visible.length} 人</span></div>
-      <div className="export-toolbar"><label className="check-all"><input type="checkbox" checked={allSelected} onChange={toggleAll} /> 全选</label><button type="button" className="secondary-button" disabled={!visible.length||!selected.length} onClick={exportStudents}>导出已选</button><button type="button" className="secondary-button" disabled={!visible.length} onClick={()=>{setSelected(visible.map(student=>student.id));setTimeout(exportStudents,0)}}>导出全部</button></div>
+      <div className="section-heading"><div className="list-tabs" role="tablist" aria-label="学生列表视图"><button type="button" className={`list-tab${view==="active"?" list-tab-active":""}`} onClick={()=>{setView("active");setSelected([]);setPage(1)}}>在读学生</button><button type="button" className={`list-tab${view==="graduates"?" list-tab-active":""}`} onClick={()=>{setView("graduates");setSelected([]);setPage(1)}}>毕业生</button></div><span className="list-meta" role="status">{hasFilters?`${visible.length} / ${viewStudents.length} 人`: `${visible.length} 人`}</span></div>
+      <section className="student-filters" aria-label="学生筛选">
+        <label className="field">学号<input type="search" inputMode="numeric" value={filters.id} onChange={event=>updateFilters({...filters,id:event.target.value})} placeholder="输入完整学号" /></label>
+        <DropdownField label="年级" placeholder="全部年级" clearLabel="全部年级" options={filterGrades} value={filters.grade?[filters.grade]:[]} onChange={value=>updateFilters({...filters,grade:value[0]??""})} />
+        <label className="field">姓名<input type="search" value={filters.name} onChange={event=>updateFilters({...filters,name:event.target.value})} placeholder="输入姓名关键词" /></label>
+        <DropdownField label="科目" placeholder="全部科目" clearLabel="全部科目" options={filterSubjects} value={filters.subject?[filters.subject]:[]} onChange={value=>updateFilters({...filters,subject:value[0]??""})} />
+        <button type="button" className="secondary-button filter-reset" disabled={!hasFilters} onClick={()=>updateFilters(emptyFilters)}>清空筛选</button>
+      </section>
+      <div className="export-toolbar"><label className="check-all"><input type="checkbox" checked={allSelected} onChange={toggleAll} /> 全选<span className="selection-count">{selectedVisible.length} 已选</span></label><div className="export-actions"><button type="button" className="secondary-button" disabled={!selectedVisible.length} onClick={exportStudents}>导出 Excel</button></div></div>
       <section className="student-list" aria-label={view==="active"?"在读学生列表":"毕业生列表"}>
-        {visible.map(student=><article className="student-row" key={student.id}>
+        {pageItems.map(student=><article className="student-row" key={student.id}>
           <label className="row-check"><input type="checkbox" checked={selected.includes(student.id)} onChange={()=>toggle(student.id)} aria-label={`选择${student.display_name}`} /></label><div className="student-info"><strong className="student-title">{student.id} · {student.grade} · {student.display_name}</strong><span className="student-subtitle">{student.subjects.join("、")}{student.is_deleted&&<span className="deleted-label"> · 已删除</span>}</span></div>
           {!student.is_deleted&&<div className="student-actions">
             <button className="secondary-button" type="button" onClick={()=>edit(student)}>编辑资料</button>
@@ -128,8 +160,9 @@ export default function Admin(){
             <button className="danger-button" type="button" onClick={()=>remove(student.id)}>删除</button>
           </div>}
         </article>)}
-        {list.filter(student=>view==="active"?!student.is_deleted:student.is_deleted).length===0&&<div className="empty-state"><span className="empty-mark">册</span><p className="empty-title">{view==="active"?"名册还是空的":"还没有毕业生记录"}</p><p className="empty-copy">{view==="active"?"添加第一位学生后，可在此修改资料和人脸照片。":"被软删除的学生会显示在这里，历史签到记录仍会保留。"}</p></div>}
+        {visible.length===0&&<div className="empty-state"><span className="empty-mark">册</span><p className="empty-title">{hasFilters?"没有符合筛选条件的学生":view==="active"?"名册还是空的":"还没有毕业生记录"}</p><p className="empty-copy">{hasFilters?"请调整筛选条件，或清空筛选查看全部学生。":view==="active"?"添加第一位学生后，可在此修改资料和人脸照片。":"被软删除的学生会显示在这里，历史签到记录仍会保留。"}</p></div>}
       </section>
+      {visible.length>0&&<nav className="pagination" aria-label="学生列表分页"><button type="button" className="secondary-button" disabled={currentPage===1} onClick={()=>setPage(currentPage-1)}>上一页</button><span>第 {currentPage} / {pageCount} 页</span><button type="button" className="secondary-button" disabled={currentPage===pageCount} onClick={()=>setPage(currentPage+1)}>下一页</button></nav>}
     </main>
     {editing&&<div className="dialog-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setEditing(undefined)}}>
       <form className="edit-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-title" onSubmit={saveEdit}>
