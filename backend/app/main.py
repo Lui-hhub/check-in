@@ -165,7 +165,7 @@ async def list_students(include_deleted: bool = False, _: dict = Depends(require
 
 async def create_student(db: AsyncSession, grade: str, name: str, subject: str | list[str], embedding: list[float], image_path: str | None):
     subjects = [subject] if isinstance(subject, str) else subject
-    student = Student(id=await next_student_id(db), grade=grade, name=name, display_name=await unique_display_name(db, grade, name), face_embedding=embedding, face_image_path=image_path)
+    student = Student(id=await next_student_id(db), grade=grade, name=name, display_name=await unique_display_name(db, grade, name), face_embedding=embedding, face_embedding_vector=embedding, face_image_path=image_path)
     student.subjects = [StudentSubject(subject=item.strip()) for item in subjects if item.strip()]
     db.add(student); await db.commit(); await db.refresh(student); return student
 
@@ -207,7 +207,7 @@ async def import_students(file: Annotated[UploadFile, File()], _: dict = Depends
             if missing_values:
                 errors.append(f"第 {row_number} 行缺少：{', '.join(missing_values)}")
                 continue
-            student = Student(id=await next_student_id(db), grade=values["grade"], name=values["name"], display_name=await unique_display_name(db, values["grade"], values["name"]), face_embedding=[], face_image_path=None)
+            student = Student(id=await next_student_id(db), grade=values["grade"], name=values["name"], display_name=await unique_display_name(db, values["grade"], values["name"]), face_embedding=[], face_embedding_vector=None, face_image_path=None)
             student.subjects = [StudentSubject(subject=item.strip()) for item in values["subject"].replace("，", ",").split(",") if item.strip()]
             db.add(student)
             await db.flush()
@@ -264,7 +264,7 @@ async def edit_student(student_id: int, fields: StudentFields, _: dict = Depends
 async def replace_face(student_id: int, embedding: Annotated[str, Form()], face_image: Annotated[UploadFile, File()], _: dict = Depends(require_role("admin")), db: AsyncSession = Depends(get_db)):
     student = await db.scalar(select(Student).options(selectinload(Student.subjects)).where(Student.id == student_id))
     if not student: raise HTTPException(404, "学生不存在")
-    student.face_embedding = parse_embedding(embedding); student.face_image_path = await save_upload(face_image, "students")
+    student.face_embedding = parse_embedding(embedding); student.face_embedding_vector = student.face_embedding; student.face_image_path = await save_upload(face_image, "students")
     await db.commit(); await db.refresh(student)
     logger.info("student face updated student_id=%s", student.id)
     return student_out(student)
@@ -284,14 +284,14 @@ async def add_checkin(embedding: Annotated[str, Form()], photo: Annotated[Upload
     if student and student.is_deleted: raise HTTPException(422, "学生已删除")
     matched_distance = None
     if not student:
-        candidates = [row for row in (await db.execute(
-            select(Student.id, Student.face_embedding).where(Student.is_deleted.is_(False))
-        )).all() if len(row.face_embedding or []) == 128]
+        candidates = list((await db.execute(
+            select(Student.id, Student.face_embedding_vector.l2_distance(vector).label("distance"))
+            .where(Student.is_deleted.is_(False), Student.face_embedding_vector.is_not(None))
+            .order_by(Student.face_embedding_vector.l2_distance(vector))
+            .limit(1)
+        )).all())
         if not candidates: raise HTTPException(422, "暂无学生资料")
-        matched_id, matched_distance = min(
-            ((row.id, distance(vector, row.face_embedding)) for row in candidates),
-            key=lambda item: item[1],
-        )
+        matched_id, matched_distance = candidates[0].id, float(candidates[0].distance)
         student = await db.get(Student, matched_id)
         if student is None: raise HTTPException(422, "学生资料已变更，请重试")
         logger.info("face match candidate student_id=%s distance=%.4f threshold=%.4f", student.id, matched_distance, settings.face_match_threshold)
