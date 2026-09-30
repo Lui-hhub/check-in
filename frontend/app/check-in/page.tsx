@@ -6,6 +6,8 @@ import PageHeader from "../../components/PageHeader";
 
 type Student={id:number;grade:string;display_name:string;subjects:string[]};
 type PendingSubject={photo:Blob;embedding:string;studentId:number;displayName:string;subjects:string[];distance:number|null};
+type Candidate={student_id:number;display_name:string;subjects:string[]};
+type PendingCandidates={photo:Blob;embedding:string;candidates:Candidate[]};
 
 export default function CheckIn(){
   const video=useRef<HTMLVideoElement>(null);
@@ -20,6 +22,7 @@ export default function CheckIn(){
   const [manualSubject,setManualSubject]=useState("");
   const [sessionSubject,setSessionSubject]=useState("");
   const [pendingSubject,setPendingSubject]=useState<PendingSubject>();
+  const [pendingCandidates,setPendingCandidates]=useState<PendingCandidates>();
   const sessionStudents=students.filter(student=>!sessionSubject||student.subjects.includes(sessionSubject));
   const sessionSubjects=Array.from(new Set(students.flatMap(student=>student.subjects))).sort();
   const router=useRouter();
@@ -100,6 +103,7 @@ export default function CheckIn(){
       form.append("subject",forcedSubject||sessionSubject);
       const data=await api("/api/checkins",{method:"POST",body:form},["uploader"]);
       setPendingSubject(undefined);
+      setPendingCandidates(undefined);
       setResult(`签到成功 · ${data.grade} ${data.name} · ${data.subject}`);
     }catch(e){
       if(e instanceof ApiError && e.status===409 && typeof e.detail === "object" && e.detail && (e.detail as {code?:string}).code === "SUBJECT_REQUIRED" && capturedPhoto && capturedEmbedding){
@@ -107,7 +111,9 @@ export default function CheckIn(){
         setPendingSubject({photo:capturedPhoto,embedding:capturedEmbedding,studentId:detail.student_id,displayName:detail.display_name,subjects:detail.subjects,distance:detail.distance});
         setError("已识别到学生，请选择本次补课科目后提交。");
       }else if(e instanceof ApiError && e.status===409 && typeof e.detail === "object" && e.detail && (e.detail as {code?:string}).code === "STUDENT_AMBIGUOUS"){
-        setError("照片对应多个相似的学生资料，请在右侧手动选择学生和科目后签到。");
+        const detail=e.detail as {candidates:Candidate[]};
+        if(capturedPhoto&&capturedEmbedding)setPendingCandidates({photo:capturedPhoto,embedding:capturedEmbedding,candidates:detail.candidates});
+        setError("照片对应多个相似的学生资料，请选择正确的学生。");
       }else setError((e as Error).message)
     }finally{setBusy(false)}
   }
@@ -137,6 +143,15 @@ export default function CheckIn(){
             <p className="manual-note">识别到：{pendingSubject.displayName}</p>
             <label className="field">本次补课科目<select className="select-control" value={manualSubject} onChange={e=>setManualSubject(e.target.value)}><option value="">选择科目</option>{pendingSubject.subjects.map(subject=><option key={subject}>{subject}</option>)}</select></label>
             <button className="primary-button" type="button" disabled={!manualSubject||busy} onClick={()=>submit(pendingSubject.studentId,manualSubject,pendingSubject)}>确认签到</button>
+          </div>}
+          {pendingCandidates&&<div className="candidate-dialog-backdrop" role="presentation">
+            <div className="candidate-dialog" role="dialog" aria-modal="true" aria-labelledby="candidate-dialog-title">
+              <p className="eyebrow">需要确认</p>
+              <h2 id="candidate-dialog-title">请选择本次签到的学生</h2>
+              <p className="heading-note">检测到多条相似的人脸资料。当前科目：{sessionSubject}</p>
+              <div className="candidate-list">{pendingCandidates.candidates.map(candidate=><button className="candidate-option" type="button" key={candidate.student_id} onClick={()=>submit(candidate.student_id,sessionSubject,pendingCandidates)}><strong>{candidate.display_name}</strong><span>{candidate.subjects.join("、")}</span></button>)}</div>
+              <button className="secondary-button" type="button" onClick={()=>setPendingCandidates(undefined)}>取消，重新拍照</button>
+            </div>
           </div>}
         </section>
         <section className="manual-panel">

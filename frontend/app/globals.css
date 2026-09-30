@@ -63,6 +63,13 @@ h1, h2, p { margin-top: 0; }
 h1 { margin-bottom: 0; font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif; font-size: 31px; line-height: 1.28; font-weight: 600; }
 .title-with-field { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .title-select { min-width: 150px; min-height: 42px; padding: 8px 30px 8px 11px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--ink); font-size: 14px; }
+.candidate-dialog-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 22px; background: rgb(32 43 39 / 42%); }
+.candidate-dialog { width: min(100%, 430px); display: grid; gap: 14px; padding: 25px; border: 1px solid var(--line); border-top: 3px solid var(--green); border-radius: 5px; background: var(--surface); box-shadow: 0 24px 70px rgb(32 43 39 / 25%); }
+.candidate-dialog h2 { margin: 0; font-size: 21px; }
+.candidate-list { display: grid; gap: 8px; }
+.candidate-option { display: grid; gap: 4px; padding: 13px 14px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); text-align: left; cursor: pointer; }
+.candidate-option:hover { border-color: var(--green); background: var(--green-pale); }
+.candidate-option span { color: var(--muted); font-size: 13px; }
 h2 { margin-bottom: 7px; font-size: 17px; font-weight: 650; }
 .heading-note { margin: 8px 0 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
 .rule-title { display: flex; align-items: center; gap: 10px; }
