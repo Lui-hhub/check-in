@@ -23,7 +23,8 @@ source "$ENV_FILE"
 set +a
 
 echo "[$(date --iso-8601=seconds)] backing up database"
-pg_dump --dbname="$DATABASE_URL" --format=custom --file="$WORK_DIR/check-in-$STAMP.dump"
+DB_DUMP_URL="${DATABASE_URL/postgresql+asyncpg:/postgresql:}"
+pg_dump --dbname="$DB_DUMP_URL" --format=custom --file="$WORK_DIR/check-in-$STAMP.dump"
 
 echo "[$(date --iso-8601=seconds)] backing up media"
 tar -C "$APP_DIR/backend/data" -czf "$WORK_DIR/check-in-media-$STAMP.tar.gz" media
