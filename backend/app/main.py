@@ -292,7 +292,9 @@ async def add_checkin(embedding: Annotated[str, Form()], photo: Annotated[Upload
         )).all())
         if not candidates: raise HTTPException(422, "暂无学生资料")
         matched_id, matched_distance = candidates[0].id, float(candidates[0].distance)
-        student = await db.get(Student, matched_id)
+        student = await db.scalar(
+            select(Student).options(selectinload(Student.subjects)).where(Student.id == matched_id)
+        )
         if student is None: raise HTTPException(422, "学生资料已变更，请重试")
         logger.info("face match candidate student_id=%s distance=%.4f threshold=%.4f", student.id, matched_distance, settings.face_match_threshold)
         if matched_distance > settings.face_match_threshold:
