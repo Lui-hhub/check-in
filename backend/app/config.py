@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     media_dir: str = "./data/media"
     frontend_origin: str = "http://localhost:3000"
     log_level: str = "INFO"
+    db_pool_size: int = 10
+    db_max_overflow: int = 10
+    db_pool_timeout: int = 10
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 @lru_cache

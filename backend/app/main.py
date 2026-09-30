@@ -11,6 +11,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 from PIL import Image, UnidentifiedImageError
 from openpyxl import load_workbook
 from openpyxl import Workbook
@@ -83,13 +84,8 @@ async def next_student_id(db: AsyncSession) -> int:
         raise HTTPException(409, "本年度学生编号已用完")
     return (value or start) + 1
 
-async def save_upload(upload: UploadFile, folder: str) -> str:
-    suffix = ".jpg"
-    relative = f"{folder}/{uuid.uuid4().hex}{suffix}"
-    target = media_root / relative
-    target.parent.mkdir(parents=True, exist_ok=True)
-    data = await upload.read()
-    if len(data) > 8 * 1024 * 1024: raise HTTPException(413, "图片过大")
+def save_image(data: bytes, target: Path) -> None:
+    """Decode and normalize an uploaded image outside the async event loop."""
     try:
         with Image.open(io.BytesIO(data)) as image:
             image.load()
@@ -98,6 +94,15 @@ async def save_upload(upload: UploadFile, folder: str) -> str:
             image.convert("RGB").save(target, format="JPEG", quality=80, optimize=True)
     except (UnidentifiedImageError, OSError) as exc:
         raise HTTPException(400, "请上传有效的 JPEG 照片") from exc
+
+async def save_upload(upload: UploadFile, folder: str) -> str:
+    suffix = ".jpg"
+    relative = f"{folder}/{uuid.uuid4().hex}{suffix}"
+    target = media_root / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    data = await upload.read()
+    if len(data) > 8 * 1024 * 1024: raise HTTPException(413, "图片过大")
+    await run_in_threadpool(save_image, data, target)
     return relative
 
 def parse_embedding(raw: str) -> list[float]:

@@ -10,7 +10,7 @@ Group=ubuntu
 WorkingDirectory=/home/ubuntu/check-in/backend
 EnvironmentFile=/home/ubuntu/check-in/backend/.env
 Environment="PATH=/home/ubuntu/.local/bin:/home/ubuntu/.nvm/versions/node/v24.21.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
-ExecStart=/home/ubuntu/.local/bin/uv run --project /home/ubuntu/check-in/backend fastapi run app/main.py --host 127.0.0.1 --port 8001
+ExecStart=/home/ubuntu/.local/bin/uv run --project /home/ubuntu/check-in/backend fastapi run app/main.py --host 127.0.0.1 --port 8001 --workers 2
 Restart=always
 RestartSec=3
 StandardOutput=journal
