@@ -2,6 +2,7 @@ import json
 import io
 import logging
 import math
+import mimetypes
 import time
 import uuid
 import asyncio
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import Annotated
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 from PIL import Image, UnidentifiedImageError
 from openpyxl import load_workbook
@@ -353,4 +354,12 @@ async def list_checkins(_: dict = Depends(require_any("viewer", "admin")), db: A
 async def media(path: str, _: dict = Depends(require_any("viewer", "uploader", "admin"))):
     target = (media_root / path).resolve()
     if media_root not in target.parents or not target.is_file(): raise HTTPException(404, "文件不存在")
-    return FileResponse(target)
+    media_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+    # Nginx serves the file body after this endpoint verifies the JWT.
+    return Response(
+        status_code=200,
+        headers={
+            "X-Accel-Redirect": f"/__protected-media/{path}",
+            "Content-Type": media_type,
+        },
+    )
