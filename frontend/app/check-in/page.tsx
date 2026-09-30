@@ -88,6 +88,7 @@ export default function CheckIn(){
       if(!sessionSubject)throw new Error("请先选择本场签到科目。");
       if(!ready&&!studentId)throw new Error("人脸识别尚未就绪。你仍可选择学生后人工签到。 ");
       const photo=capturedPhoto??await capture();
+      capturedPhoto=photo;
       let descriptor:Float32Array|undefined;
       if(ready&&!capturedEmbedding){
         const faceapi=await import("face-api.js");
