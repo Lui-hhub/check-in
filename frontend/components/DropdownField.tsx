@@ -19,6 +19,7 @@ export default function DropdownField({label,placeholder,options,value,multiple=
   const triggerRef=useRef<HTMLButtonElement>(null);
   const optionRefs=useRef<(HTMLButtonElement|null)[]>([]);
   const choices=clearLabel?["",...options]:options;
+  const displayValue=multiple&&value.length>2?`已选 ${value.length} 项`:value.join("、");
 
   useEffect(()=>{
     if(!open)return;
@@ -45,7 +46,7 @@ export default function DropdownField({label,placeholder,options,value,multiple=
       aria-haspopup="listbox" aria-expanded={open} aria-controls={open?`${id}-menu`:undefined}
       onClick={()=>setOpen(current=>!current)}
       onKeyDown={event=>{if(event.key==="ArrowDown"||event.key==="ArrowUp"){event.preventDefault();setOpen(true)}}}>
-      <span id={`${id}-value`} className={`dropdown-trigger-text${value.length?"":" dropdown-placeholder"}`} title={value.join("、")}>{value.length?value.join("、"):placeholder}</span>
+      <span id={`${id}-value`} className={`dropdown-trigger-text${value.length?"":" dropdown-placeholder"}`} title={value.join("、")}>{value.length?displayValue:placeholder}</span>
       <svg className="dropdown-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
     </button>
     {open&&<div id={`${id}-menu`} className="dropdown-menu" role="listbox" aria-labelledby={`${id}-label`} aria-multiselectable={multiple}>

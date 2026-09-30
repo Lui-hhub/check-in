@@ -110,6 +110,7 @@ h2 { margin-bottom: 7px; font-size: 17px; font-weight: 650; }
   cursor: pointer;
   font-size: 15px;
   text-align: left;
+  min-width: 0;
 }
 .dropdown-trigger:hover, .dropdown-trigger[aria-expanded="true"] { border-color: var(--green); }
 .dropdown-trigger-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
@@ -204,6 +205,8 @@ h2 { margin-bottom: 7px; font-size: 17px; font-weight: 650; }
 .import-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 .import-actions .file-input { width: 220px; }
 .admin-form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: flex-end; }
+.admin-form-grid > * { min-width: 0; }
+.admin-form-grid .field input, .admin-form-grid .dropdown-field { width: 100%; min-width: 0; }
 .file-input { min-height: 46px; padding: 8px; border: 1px dashed var(--line-strong); border-radius: 4px; background: #fbfcfa; color: var(--muted); font-size: 12px; }
 .admin-submit { min-height: 46px; }
 .section-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin: 30px 0 13px; }
