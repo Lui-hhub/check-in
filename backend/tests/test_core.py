@@ -2,7 +2,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.db import Base
-from app.main import create_student, distance, parse_embedding
+from app.main import InMemoryRateLimiter, create_student, distance, parse_embedding
 
 def test_distance_calculates_euclidean_distance():
     assert distance([0.0, 0.0], [3.0, 4.0]) == 5.0
@@ -16,6 +16,19 @@ def test_parse_embedding_requires_128_numbers():
 def test_parse_embedding_rejects_invalid_data(raw):
     with pytest.raises(HTTPException):
         parse_embedding(raw)
+
+def test_rate_limiter_rejects_requests_over_window_limit():
+    import asyncio
+
+    async def run():
+        limiter = InMemoryRateLimiter()
+        key = ("test-client", "auth")
+        assert await limiter.allow(key, 2, 100.0)
+        assert await limiter.allow(key, 2, 101.0)
+        assert not await limiter.allow(key, 2, 102.0)
+        assert await limiter.allow(key, 2, 161.0)
+
+    asyncio.run(run())
 
 def test_duplicate_student_names_get_stable_numeric_suffixes():
     import asyncio

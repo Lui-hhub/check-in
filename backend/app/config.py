@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     db_pool_size: int = 10
     db_max_overflow: int = 10
     db_pool_timeout: int = 10
+    rate_limit_auth_per_minute: int = 20
+    rate_limit_checkins_per_minute: int = 60
+    rate_limit_api_per_minute: int = 240
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 @lru_cache

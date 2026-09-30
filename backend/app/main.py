@@ -4,13 +4,15 @@ import logging
 import math
 import time
 import uuid
+import asyncio
+from collections import defaultdict, deque
 from datetime import datetime
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 from PIL import Image, UnidentifiedImageError
 from openpyxl import load_workbook
@@ -31,6 +33,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger("checkin.api")
 media_root = Path(settings.media_dir).resolve()
+
+class InMemoryRateLimiter:
+    """Per-process limiter; use Redis when the API runs on multiple hosts."""
+
+    def __init__(self) -> None:
+        self.requests: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+        self.lock = asyncio.Lock()
+
+    async def allow(self, key: tuple[str, str], limit: int, now: float) -> bool:
+        async with self.lock:
+            bucket = self.requests[key]
+            cutoff = now - 60
+            while bucket and bucket[0] <= cutoff:
+                bucket.popleft()
+            if len(bucket) >= limit:
+                return False
+            bucket.append(now)
+            return True
+
+rate_limiter = InMemoryRateLimiter()
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     media_root.mkdir(parents=True, exist_ok=True)
@@ -39,6 +62,26 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="补习班签到 API", lifespan=lifespan)
 allowed_origins = [origin.strip().rstrip("/") for origin in settings.frontend_origin.split(",") if origin.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+@app.middleware("http")
+async def rate_limit_requests(request: Request, call_next):
+    if request.method == "OPTIONS" or not request.url.path.startswith("/api/"):
+        return await call_next(request)
+    path = request.url.path
+    if path.startswith("/api/auth/"):
+        limit = settings.rate_limit_auth_per_minute
+        category = "auth"
+    elif path == "/api/checkins":
+        limit = settings.rate_limit_checkins_per_minute
+        category = "checkins"
+    else:
+        limit = settings.rate_limit_api_per_minute
+        category = "api"
+    client = request.headers.get("x-real-ip") or (request.client.host if request.client else "unknown")
+    if not await rate_limiter.allow((client, category), limit, time.monotonic()):
+        logger.warning("rate limit exceeded category=%s client=%s", category, client)
+        return JSONResponse({"detail": "请求过于频繁，请稍后再试"}, status_code=429, headers={"Retry-After": "60"})
+    return await call_next(request)
 
 @app.middleware("http")
 async def request_logging(request: Request, call_next):
