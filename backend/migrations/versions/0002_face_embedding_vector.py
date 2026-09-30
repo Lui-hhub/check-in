@@ -3,7 +3,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "0002_face_embedding_vector"
-down_revision = "0001_initial"
+down_revision = "0002_students_subjects_and_ids"
 branch_labels = None
 depends_on = None
 
