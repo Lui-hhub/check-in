@@ -175,7 +175,7 @@ async def add_student(grade: Annotated[str, Form()], name: Annotated[str, Form()
     subject_list = [item.strip() for item in subjects.replace("，", ",").split(",") if item.strip()]
     if not subject_list: raise HTTPException(400, "至少填写一个科目")
     student = await create_student(db, grade, name, subject_list, parse_embedding(embedding), path)
-    logger.info("student created student_id=%s grade=%s subject=%s", student.id, grade, subject)
+    logger.info("student created student_id=%s grade=%s subjects=%s", student.id, grade, ",".join(subject_list))
     return student_out(student)
 
 @app.post("/api/students/import", response_model=StudentImportResponse)
@@ -284,9 +284,16 @@ async def add_checkin(embedding: Annotated[str, Form()], photo: Annotated[Upload
     if student and student.is_deleted: raise HTTPException(422, "学生已删除")
     matched_distance = None
     if not student:
-        students = [student for student in (await db.execute(select(Student).options(selectinload(Student.subjects)).where(Student.is_deleted.is_(False)))).scalars() if len(student.face_embedding or []) == 128]
-        if not students: raise HTTPException(422, "暂无学生资料")
-        student, matched_distance = min(((s, distance(vector, s.face_embedding)) for s in students), key=lambda x: x[1])
+        candidates = [row for row in (await db.execute(
+            select(Student.id, Student.face_embedding).where(Student.is_deleted.is_(False))
+        )).all() if len(row.face_embedding or []) == 128]
+        if not candidates: raise HTTPException(422, "暂无学生资料")
+        matched_id, matched_distance = min(
+            ((row.id, distance(vector, row.face_embedding)) for row in candidates),
+            key=lambda item: item[1],
+        )
+        student = await db.get(Student, matched_id)
+        if student is None: raise HTTPException(422, "学生资料已变更，请重试")
         logger.info("face match candidate student_id=%s distance=%.4f threshold=%.4f", student.id, matched_distance, settings.face_match_threshold)
         if matched_distance > settings.face_match_threshold:
             logger.warning("face match failed distance=%.4f threshold=%.4f", matched_distance, settings.face_match_threshold)
