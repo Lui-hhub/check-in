@@ -61,6 +61,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .eyebrow { margin: 0 0 10px; color: var(--green); font-size: 11px; font-weight: 700; text-transform: uppercase; }
 h1, h2, p { margin-top: 0; }
 h1 { margin-bottom: 0; font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif; font-size: 31px; line-height: 1.28; font-weight: 600; }
+.title-with-field { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.title-select { min-width: 150px; min-height: 42px; padding: 8px 30px 8px 11px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--ink); font-size: 14px; }
 h2 { margin-bottom: 7px; font-size: 17px; font-weight: 650; }
 .heading-note { margin: 8px 0 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
 .rule-title { display: flex; align-items: center; gap: 10px; }

@@ -284,11 +284,14 @@ async def add_checkin(embedding: Annotated[str, Form()], photo: Annotated[Upload
     if student and student.is_deleted: raise HTTPException(422, "学生已删除")
     matched_distance = None
     if not student:
-        candidates = list((await db.execute(
+        candidate_query = (
             select(Student.id, Student.face_embedding_vector.l2_distance(vector).label("distance"))
             .where(Student.is_deleted.is_(False), Student.face_embedding_vector.is_not(None))
-            .order_by(Student.face_embedding_vector.l2_distance(vector))
-            .limit(2)
+        )
+        if subject is not None:
+            candidate_query = candidate_query.join(StudentSubject, StudentSubject.student_id == Student.id).where(StudentSubject.subject == subject)
+        candidates = list((await db.execute(
+            candidate_query.order_by(Student.face_embedding_vector.l2_distance(vector)).limit(2)
         )).all())
         if not candidates: raise HTTPException(422, "暂无学生资料")
         if len(candidates) > 1 and float(candidates[1].distance) - float(candidates[0].distance) <= 0.02:

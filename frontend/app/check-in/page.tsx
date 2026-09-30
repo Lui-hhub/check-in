@@ -18,7 +18,10 @@ export default function CheckIn(){
   const [result,setResult]=useState("");
   const [manual,setManual]=useState("");
   const [manualSubject,setManualSubject]=useState("");
+  const [sessionSubject,setSessionSubject]=useState("");
   const [pendingSubject,setPendingSubject]=useState<PendingSubject>();
+  const sessionStudents=students.filter(student=>!sessionSubject||student.subjects.includes(sessionSubject));
+  const sessionSubjects=Array.from(new Set(students.flatMap(student=>student.subjects))).sort();
   const router=useRouter();
 
   useEffect(()=>{
@@ -79,6 +82,7 @@ export default function CheckIn(){
     let capturedPhoto=saved?.photo;
     let capturedEmbedding=saved?.embedding;
     try{
+      if(!sessionSubject)throw new Error("请先选择本场签到科目。");
       if(!ready&&!studentId)throw new Error("人脸识别尚未就绪。你仍可选择学生后人工签到。 ");
       const photo=capturedPhoto??await capture();
       let descriptor:Float32Array|undefined;
@@ -93,9 +97,7 @@ export default function CheckIn(){
       form.append("photo",photo,"checkin.jpg");
       form.append("embedding",capturedEmbedding);
       if(studentId)form.append("student_id",String(studentId));
-      const chosen=students.find(item=>item.id===studentId);
-      if(studentId && (forcedSubject||manualSubject)) form.append("subject",forcedSubject||manualSubject);
-      if(!studentId && chosen?.subjects.length===1) form.append("subject",chosen.subjects[0]);
+      form.append("subject",forcedSubject||sessionSubject);
       const data=await api("/api/checkins",{method:"POST",body:form},["uploader"]);
       setPendingSubject(undefined);
       setResult(`签到成功 · ${data.grade} ${data.name} · ${data.subject}`);
@@ -114,7 +116,7 @@ export default function CheckIn(){
     <PageHeader section="拍照签到" />
     <main className="page">
       <div className="page-heading">
-        <div><p className="eyebrow">到课登记</p><h1>拍照签到</h1><p className="heading-note">让学生面向镜头，保持脸部清晰。</p></div>
+          <div><p className="eyebrow">到课登记</p><div className="title-with-field"><h1>拍照签到</h1><select className="title-select" aria-label="本场签到科目" value={sessionSubject} onChange={e=>{setSessionSubject(e.target.value);setManual("");setManualSubject("");setPendingSubject(undefined);setError("")}}><option value="">选择签到科目</option>{sessionSubjects.map(subject=><option key={subject}>{subject}</option>)}</select></div><p className="heading-note">先选择本场科目，再让学生面向镜头完成签到。</p></div>
       </div>
       <div className="camera-layout">
         <section className="camera-column" aria-label="摄像头拍照">
@@ -126,7 +128,7 @@ export default function CheckIn(){
           <div className="camera-actions">
             <button className="secondary-button" type="button" onClick={()=>startCamera()}>{stream?"重新连接摄像头":"开启摄像头"}</button>
             {stream&&<button className="secondary-button" type="button" onClick={switchCamera} disabled={busy}>切换{cameraMode === "environment" ? "前置" : "后置"}摄像头</button>}
-            <button className="primary-button" type="button" disabled={!stream||busy} onClick={()=>submit()}>{busy?"正在识别…":result?"再拍一张":"拍照并识别"}</button>
+            <button className="primary-button" type="button" disabled={!stream||!sessionSubject||busy} onClick={()=>submit()}>{busy?"正在识别…":result?"再拍一张":"拍照并识别"}</button>
           </div>
           <p className="camera-state"><span className={`state-dot${ready?" state-dot-ready":""}`} />{ready?"人脸识别已就绪":"正在准备人脸识别"}</p>
           {error&&<p className="form-error" role="alert">{error}</p>}
@@ -144,11 +146,10 @@ export default function CheckIn(){
           <label className="field" htmlFor="student-choice">学生
             <select className="select-control" id="student-choice" value={manual} onChange={e=>{setManual(e.target.value);setManualSubject("")}}>
               <option value="">选择年级和姓名</option>
-              {students.map(student=><option key={student.id} value={student.id}>{student.grade} · {student.display_name}</option>)}
+              {sessionStudents.map(student=><option key={student.id} value={student.id}>{student.grade} · {student.display_name}</option>)}
             </select>
           </label>
-          {manual&&<label className="field">补课科目<select className="select-control" value={manualSubject} onChange={e=>setManualSubject(e.target.value)}><option value="">选择科目</option>{students.find(student=>student.id===Number(manual))?.subjects.map(subject=><option key={subject}>{subject}</option>)}</select></label>}
-          <button className="secondary-button" type="button" disabled={!stream||!manual||!manualSubject||busy} onClick={()=>submit(Number(manual))}>按所选学生签到</button>
+          <button className="secondary-button" type="button" disabled={!stream||!sessionSubject||!manual||busy} onClick={()=>submit(Number(manual),sessionSubject)}>按所选学生签到</button>
           <hr className="section-line" />
           <p className="manual-note">每次签到都会保存一张照片。学生每天可签到多次，记录保留最近十次。</p>
         </section>
