@@ -1,10 +1,11 @@
 "use client";
 import {useEffect,useRef,useState} from "react";
-import {api} from "../../lib/api";
+import {api,ApiError} from "../../lib/api";
 import {useRouter} from "next/navigation";
 import PageHeader from "../../components/PageHeader";
 
 type Student={id:number;grade:string;display_name:string;subjects:string[]};
+type PendingSubject={photo:Blob;embedding:string;studentId:number;displayName:string;subjects:string[];distance:number|null};
 
 export default function CheckIn(){
   const video=useRef<HTMLVideoElement>(null);
@@ -17,6 +18,7 @@ export default function CheckIn(){
   const [result,setResult]=useState("");
   const [manual,setManual]=useState("");
   const [manualSubject,setManualSubject]=useState("");
+  const [pendingSubject,setPendingSubject]=useState<PendingSubject>();
   const router=useRouter();
 
   useEffect(()=>{
@@ -72,28 +74,40 @@ export default function CheckIn(){
     });
   }
 
-  async function submit(studentId?:number){
+  async function submit(studentId?:number, forcedSubject?:string, saved?:{photo:Blob;embedding:string}){
     setError("");setResult("");setBusy(true);
+    let capturedPhoto=saved?.photo;
+    let capturedEmbedding=saved?.embedding;
     try{
       if(!ready&&!studentId)throw new Error("人脸识别尚未就绪。你仍可选择学生后人工签到。 ");
-      const photo=await capture();
+      const photo=capturedPhoto??await capture();
       let descriptor:Float32Array|undefined;
-      if(ready){
+      if(ready&&!capturedEmbedding){
         const faceapi=await import("face-api.js");
         const match=await faceapi.detectSingleFace(video.current!,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
         descriptor=match?.descriptor;
       }
-      if(!descriptor&&!studentId)throw new Error("画面里没有清晰的人脸，请调整位置后重拍，或手动选择学生。");
+      if(!capturedEmbedding) capturedEmbedding=JSON.stringify(Array.from(descriptor||new Float32Array(128)));
+      if(!descriptor&&!studentId&&!saved)throw new Error("画面里没有清晰的人脸，请调整位置后重拍，或手动选择学生。");
       const form=new FormData();
       form.append("photo",photo,"checkin.jpg");
-      form.append("embedding",JSON.stringify(Array.from(descriptor||new Float32Array(128))));
+      form.append("embedding",capturedEmbedding);
       if(studentId)form.append("student_id",String(studentId));
       const chosen=students.find(item=>item.id===studentId);
-      if(studentId && manualSubject) form.append("subject",manualSubject);
+      if(studentId && (forcedSubject||manualSubject)) form.append("subject",forcedSubject||manualSubject);
       if(!studentId && chosen?.subjects.length===1) form.append("subject",chosen.subjects[0]);
       const data=await api("/api/checkins",{method:"POST",body:form},["uploader"]);
+      setPendingSubject(undefined);
       setResult(`签到成功 · ${data.grade} ${data.name} · ${data.subject}`);
-    }catch(e){setError((e as Error).message)}finally{setBusy(false)}
+    }catch(e){
+      if(e instanceof ApiError && e.status===409 && typeof e.detail === "object" && e.detail && (e.detail as {code?:string}).code === "SUBJECT_REQUIRED" && capturedPhoto && capturedEmbedding){
+        const detail=e.detail as {student_id:number;display_name:string;subjects:string[];distance:number|null};
+        setPendingSubject({photo:capturedPhoto,embedding:capturedEmbedding,studentId:detail.student_id,displayName:detail.display_name,subjects:detail.subjects,distance:detail.distance});
+        setError("已识别到学生，请选择本次补课科目后提交。");
+      }else if(e instanceof ApiError && e.status===409 && typeof e.detail === "object" && e.detail && (e.detail as {code?:string}).code === "STUDENT_AMBIGUOUS"){
+        setError("照片对应多个相似的学生资料，请在右侧手动选择学生和科目后签到。");
+      }else setError((e as Error).message)
+    }finally{setBusy(false)}
   }
 
   return <>
@@ -117,6 +131,11 @@ export default function CheckIn(){
           <p className="camera-state"><span className={`state-dot${ready?" state-dot-ready":""}`} />{ready?"人脸识别已就绪":"正在准备人脸识别"}</p>
           {error&&<p className="form-error" role="alert">{error}</p>}
           {result&&<p className="form-success" role="status">{result}</p>}
+          {pendingSubject&&<div className="subject-confirm">
+            <p className="manual-note">识别到：{pendingSubject.displayName}</p>
+            <label className="field">本次补课科目<select className="select-control" value={manualSubject} onChange={e=>setManualSubject(e.target.value)}><option value="">选择科目</option>{pendingSubject.subjects.map(subject=><option key={subject}>{subject}</option>)}</select></label>
+            <button className="primary-button" type="button" disabled={!manualSubject||busy} onClick={()=>submit(pendingSubject.studentId,manualSubject,pendingSubject)}>确认签到</button>
+          </div>}
         </section>
         <section className="manual-panel">
           <p className="eyebrow">备用方式</p>

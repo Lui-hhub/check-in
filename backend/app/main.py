@@ -288,9 +288,23 @@ async def add_checkin(embedding: Annotated[str, Form()], photo: Annotated[Upload
             select(Student.id, Student.face_embedding_vector.l2_distance(vector).label("distance"))
             .where(Student.is_deleted.is_(False), Student.face_embedding_vector.is_not(None))
             .order_by(Student.face_embedding_vector.l2_distance(vector))
-            .limit(1)
+            .limit(2)
         )).all())
         if not candidates: raise HTTPException(422, "暂无学生资料")
+        if len(candidates) > 1 and float(candidates[1].distance) - float(candidates[0].distance) <= 0.02:
+            candidate_ids = [row.id for row in candidates]
+            candidate_students = list((await db.execute(
+                select(Student).options(selectinload(Student.subjects)).where(Student.id.in_(candidate_ids))
+            )).scalars())
+            by_id = {item.id: item for item in candidate_students}
+            raise HTTPException(409, detail={
+                "code": "STUDENT_AMBIGUOUS",
+                "message": "照片对应多个相似的学生资料，请手动选择学生",
+                "candidates": [
+                    {"student_id": row.id, "display_name": by_id[row.id].display_name, "subjects": [item.subject for item in by_id[row.id].subjects]}
+                    for row in candidates if row.id in by_id
+                ],
+            })
         matched_id, matched_distance = candidates[0].id, float(candidates[0].distance)
         student = await db.scalar(
             select(Student).options(selectinload(Student.subjects)).where(Student.id == matched_id)
@@ -306,7 +320,15 @@ async def add_checkin(embedding: Annotated[str, Form()], photo: Annotated[Upload
     available_subjects = [item.subject for item in student.subjects]
     if subject not in available_subjects:
         if subject is None and len(available_subjects) == 1: subject = available_subjects[0]
-        else: raise HTTPException(422, "请选择该学生的补课科目")
+        else:
+            raise HTTPException(409, detail={
+                "code": "SUBJECT_REQUIRED",
+                "message": "请选择该学生的补课科目",
+                "student_id": student.id,
+                "display_name": student.display_name,
+                "subjects": available_subjects,
+                "distance": matched_distance,
+            })
     path = await save_upload(photo, "checkins")
     checkin = Checkin(student_id=student.id, photo_path=path, grade_snapshot=student.grade, name_snapshot=student.display_name, subject_snapshot=subject)
     db.add(checkin); await db.flush()
