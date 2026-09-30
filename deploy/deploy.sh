@@ -49,6 +49,14 @@ sudo install -o root -g root -m 0644 "$APP_DIR/deploy/check-in-frontend.service"
 sudo install -o root -g root -m 0644 "$APP_DIR/deploy/nginx-check-in.conf" /etc/nginx/sites-available/check-in
 sudo ln -sfn /etc/nginx/sites-available/check-in /etc/nginx/sites-enabled/check-in
 
+sudo install -d -o ubuntu -g ubuntu -m 0700 /home/ubuntu/check-in-backups
+sudo tee /etc/cron.d/check-in-backup >/dev/null <<EOF
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin
+30 3 * * * ubuntu $APP_DIR/deploy/backup.sh >> /home/ubuntu/check-in-backups/backup.log 2>&1
+EOF
+sudo chmod 0644 /etc/cron.d/check-in-backup
+
 sudo systemctl daemon-reload
 sudo systemctl enable check-in-backend check-in-frontend
 sudo systemctl restart check-in-backend
