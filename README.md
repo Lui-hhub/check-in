@@ -2,6 +2,20 @@
 
 前后端分离的本地签到应用。前端使用 Next.js，后端使用 FastAPI、SQLAlchemy 和 PostgreSQL；后端依赖由 `uv` 管理。
 
+## 界面展示
+
+### 管理员界面
+
+![管理员界面](docs/images/admin.png)
+
+### 签到界面
+
+![签到界面](docs/images/check-in.jpg)
+
+### 查看签到记录界面
+
+![查看签到记录界面](docs/images/records.png)
+
 ## 本地运行
 
 1. 准备 PostgreSQL，并创建数据库 `check_in`。
